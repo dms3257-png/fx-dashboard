@@ -38,6 +38,7 @@ function bucketStart(ts, bucketMs) {
   return Math.floor(ts / bucketMs) * bucketMs;
 }
 
+
 /** ---------- DB (SQLite) ---------- */
 const db = new Database("data.db");
 db.pragma("journal_mode = WAL");
@@ -54,6 +55,7 @@ CREATE INDEX IF NOT EXISTS idx_ticks_symbol_ts ON ticks(symbol, ts);
 const insertTick = db.prepare("INSERT INTO ticks (ts, symbol, value) VALUES (?, ?, ?)");
 const selectTicks = db.prepare("SELECT ts, value FROM ticks WHERE symbol=? AND ts>=? AND ts<=? ORDER BY ts ASC");
 
+
 /** ---------- 상태 ---------- */
 const state = {
   asofKST: null,
@@ -63,6 +65,7 @@ const state = {
   spread10y: null,
   errors: []
 };
+
 
 /** ---------- HTTP fetch ---------- */
 async function fetchText(url, headers = {}) {
@@ -76,6 +79,7 @@ async function fetchText(url, headers = {}) {
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   return await res.text();
 }
+
 
 /** ---------- 크롤러 ---------- */
 async function crawlNaverFx() {
@@ -109,23 +113,43 @@ async function crawlNaverBond(url) {
   return parseFloat(m[1]);
 }
 
+/**
+ * ✅ DXY 크롤링 (Investing → 네이버로 교체)
+ * - 기존 Investing: Render에서 HTTP 403으로 자주 실패 [Source](https://fx-dashboard-2zo3.onrender.com/api/latest)
+ * - 네이버: HTML에 값이 그대로 내려옴(예: 98.87) [Source](https://m.stock.naver.com/marketindex/exchange/.DXY)
+ *
+ * "최소 수정"을 위해 함수명은 crawlInvestingDXY 그대로 유지합니다.
+ */
 async function crawlInvestingDXY() {
-  const url = "https://kr.investing.com/indices/usdollar";
-  const html = await fetchText(url, { "Referer": "https://kr.investing.com/" });
-  const $ = cheerio.load(html);
-
-  const candidates = [];
-  $("span, div, strong").each((_, el) => {
-    const t = $(el).text().trim();
-    if (/^[0-9]{2,3}\.[0-9]{1,4}$/.test(t)) {
-      const x = parseFloat(t);
-      if (x > 60 && x < 200) candidates.push(x);
-    }
+  const url = "https://m.stock.naver.com/marketindex/exchange/.DXY";
+  const html = await fetchText(url, {
+    "Referer": "https://m.stock.naver.com/",
   });
 
-  if (!candidates.length) throw new Error("Investing DXY parse failed");
-  return candidates[0];
+  const $ = cheerio.load(html);
+  const bodyText = $("body").text().replace(/\s+/g, " ").trim();
+
+  // 1) 가장 안정적인 패턴: "달러인덱스" 뒤에 나오는 첫 숫자
+  // (페이지에 "달러인덱스" + 굵은 숫자가 내려오는 것이 확인됨) [Source](https://m.stock.naver.com/marketindex/exchange/.DXY)
+  let m = bodyText.match(/달러인덱스\s*([0-9]{2,3}(?:\.[0-9]+)?)/);
+
+  // 2) fallback: 텍스트 안에서 60~200 사이 숫자 하나 찾기
+  if (!m) {
+    const candidates = [];
+    const tokens = bodyText.replace(/[^\d.]/g, " ").split(/\s+/).filter(Boolean);
+    for (const t of tokens) {
+      if (/^[0-9]{2,3}(\.[0-9]+)?$/.test(t)) {
+        const x = parseFloat(t);
+        if (x > 60 && x < 200) candidates.push(x);
+      }
+    }
+    if (!candidates.length) throw new Error("Naver DXY parse failed");
+    return candidates[0];
+  }
+
+  return parseFloat(m[1]);
 }
+
 
 /** ---------- 데이터 수집 + tick 저장 ---------- */
 function saveTicks(ts, map) {
@@ -160,7 +184,6 @@ async function refresh() {
   try {
     state.dxy = await crawlInvestingDXY();
   } catch (e) {
-    // Investing은 실패가 잦아도 서비스는 유지
     errors.push(String(e.message||e));
     status = (status === "OK") ? "WARN" : status;
   }
@@ -187,6 +210,7 @@ async function refresh() {
 
 setInterval(refresh, 10_000);
 refresh();
+
 
 /** ---------- API ---------- */
 app.get("/api/latest", (req, res) => res.json(state));
@@ -234,5 +258,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
+
 
 
