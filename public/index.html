@@ -1,0 +1,323 @@
+<!doctype html>
+<html lang="ko">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <title>환율·금리·달러인덱스·외환보유액</title>
+
+  <!-- Lightweight Charts (캔들에 최적, 붙이기 쉬움) -->
+  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
+
+  <style>
+    :root{
+      --bg0:#070b14;
+      --bg1:#0b1222;
+      --panel: rgba(20,30,52,.62);
+      --line: rgba(255,255,255,.10);
+      --text:#eaf0ff;
+      --muted:#a8b6d6;
+      --good:#22c55e;
+      --bad:#ef4444;
+      --warn:#f59e0b;
+      --chip: rgba(24,38,70,.75);
+      --shadow: 0 18px 50px rgba(0,0,0,.45);
+      --shadow2: 0 10px 24px rgba(0,0,0,.35);
+      --radius: 16px;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial;
+      color:var(--text);
+      background:
+        radial-gradient(900px 520px at 18% 0%, rgba(59,130,246,.28), transparent 60%),
+        radial-gradient(760px 480px at 85% 8%, rgba(34,197,94,.18), transparent 58%),
+        radial-gradient(700px 520px at 60% 85%, rgba(168,85,247,.10), transparent 60%),
+        linear-gradient(180deg, var(--bg0), var(--bg1));
+      min-height:100vh;
+    }
+    .wrap{max-width:1280px; margin:0 auto; padding:22px;}
+    .top{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;}
+    .h1{font-weight:900; letter-spacing:-.03em; font-size:22px; line-height:1.2;}
+    .sub{margin-top:6px; color:var(--muted); font-size:13px;}
+    .meta{display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:var(--muted); font-size:13px;}
+    .pill{display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); background:rgba(255,255,255,.05); border-radius:999px; box-shadow: var(--shadow2); backdrop-filter: blur(10px);}
+    .dot{width:9px; height:9px; border-radius:50%;}
+    .btn{cursor:pointer; user-select:none; padding:8px 10px; border-radius:12px; border:1px solid var(--line); background:rgba(255,255,255,.06); color:var(--text); font-weight:800; box-shadow: var(--shadow2);}
+
+    .grid6{display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; margin: 12px 0 14px;}
+    .card{border:1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)); box-shadow: var(--shadow); padding:12px 12px 10px; min-height:92px; position:relative; overflow:hidden;}
+    .k{margin:0 0 6px; font-size:12px; color:var(--muted); font-weight:900; letter-spacing:.02em;}
+    .v{font-size:22px; font-weight:950; letter-spacing:-.02em;}
+    .row{margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted); font-size:12px;}
+    .chg{font-weight:900}
+    .up{color:var(--good)} .down{color:var(--bad)}
+    .chip{padding:5px 8px; border-radius:999px; background: var(--chip); border:1px solid rgba(255,255,255,.10); color:var(--muted); font-size:12px; font-weight:800; white-space:nowrap;}
+
+    .layout{display:grid; grid-template-columns: 1.55fr 1fr 1fr; gap:12px;}
+    .panel{border:1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); overflow:hidden; backdrop-filter: blur(10px);}
+    .ph{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.10); background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));}
+    .pt{font-weight:950; font-size:12px; color:var(--muted); letter-spacing:.02em;}
+    .content{padding:12px;}
+    .chartBox{height:240px; border:1px solid rgba(255,255,255,.10); border-radius:14px; overflow:hidden; background: rgba(0,0,0,.18);}
+    .chartBox.tall{height:260px;}
+    .rightCol{display:grid; grid-template-rows: 1fr 1fr; gap:12px;}
+    .brief ul{margin:0; padding-left:18px; color:var(--muted); font-size:13px; line-height:1.6;}
+    .errors{margin-top:10px; font-size:12px; color:#fecaca; line-height:1.4;}
+    .links{color:var(--muted); font-size:13px; line-height:1.7;}
+    .links a{color:#93c5fd}
+    .foot{margin-top:14px; color:var(--muted); font-size:12px; line-height:1.5;}
+
+    @media (max-width: 1100px){
+      .grid6{grid-template-columns: repeat(3, 1fr);}
+      .layout{grid-template-columns: 1fr;}
+      .rightCol{grid-template-rows:auto}
+    }
+    @media (max-width: 560px){
+      .grid6{grid-template-columns: repeat(2, 1fr);}
+      .v{font-size:20px}
+      .h1{font-size:18px}
+    }
+  </style>
+</head>
+
+<body>
+  <div class="wrap">
+    <div class="top">
+      <div>
+        <div class="h1">환율·금리·달러인덱스·외환보유액</div>
+        <div class="sub">10초 주기 갱신 · 하단 차트는 SQLite에 쌓인 데이터로 자동 생성</div>
+      </div>
+      <div class="meta">
+        <div class="pill"><span class="dot" id="dot"></span><span id="status">BOOT</span></div>
+        <div class="pill">As of <b id="asof" style="color:var(--text); font-weight:950">-</b></div>
+        <button class="btn" id="refreshBtn">지금 새로고침</button>
+      </div>
+    </div>
+
+    <div class="grid6">
+      <div class="card"><div class="k">USD/KRW (매매기준율·네이버)</div><div class="v" id="usdkrw">-</div><div class="row"><span class="chg" id="usdchg">-</span><span class="chip">Naver</span></div></div>
+      <div class="card"><div class="k">EUR/KRW (매매기준율·네이버)</div><div class="v" id="eurkrw">-</div><div class="row"><span class="chg" id="eurchg">-</span><span class="chip">Naver</span></div></div>
+      <div class="card"><div class="k">DXY (달러인덱스·Investing)</div><div class="v" id="dxy">-</div><div class="row"><span class="chg" id="dxychg">-</span><span class="chip">Investing</span></div></div>
+      <div class="card"><div class="k">KR10Y (국고채 10년)</div><div class="v" id="kr10y">-</div><div class="row"><span class="chg" id="krchg">-</span><span class="chip">Naver</span></div></div>
+      <div class="card"><div class="k">US10Y (미국채 10년)</div><div class="v" id="us10y">-</div><div class="row"><span class="chg" id="uschg">-</span><span class="chip">Naver</span></div></div>
+      <div class="card"><div class="k">Spread (US10Y − KR10Y)</div><div class="v" id="spread">-</div><div class="row"><span class="chg" id="spchg">-</span><span class="chip">계산</span></div></div>
+    </div>
+
+    <div class="layout">
+      <div class="panel">
+        <div class="ph"><div class="pt">USD/KRW 주간 30분봉 (자동)</div><span class="chip">1주</span></div>
+        <div class="content"><div class="chartBox" id="chart_usd"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><div class="pt">DXY 주간 30분봉 (실패 시 WARN)</div><span class="chip">1주</span></div>
+        <div class="content"><div class="chartBox" id="chart_dxy"></div></div>
+      </div>
+
+      <div class="panel">
+        <div class="ph"><div class="pt">KR10Y 주간 30분봉 (자동)</div><span class="chip">1주</span></div>
+        <div class="content"><div class="chartBox" id="chart_kr10y"></div></div>
+      </div>
+
+      <div class="panel" style="grid-column: 1 / span 2;">
+        <div class="ph"><div class="pt">Spread(US−KR 10Y) 추이 (30D)</div><span class="chip">30D</span></div>
+        <div class="content"><div class="chartBox tall" id="chart_spread"></div></div>
+      </div>
+
+      <div class="rightCol">
+        <div class="panel brief">
+          <div class="ph"><div class="pt">요약(규칙 기반)</div><span class="chip">Action Brief</span></div>
+          <div class="content">
+            <ul id="briefList"></ul>
+            <div class="errors" id="errors"></div>
+          </div>
+        </div>
+
+        <div class="panel">
+          <div class="ph"><div class="pt">외환보유액(월별 · JSON 수동관리)</div><span class="chip">BOK</span></div>
+          <div class="content"><div class="chartBox tall" id="chart_reserves"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="foot">
+      참고: DXY는 차단/구조 변경으로 수집 실패가 있을 수 있어 WARN으로 처리됩니다. [Source](https://kr.investing.com/indices/usdollar)
+      환율/금리 기준 페이지: [Source](https://finance.naver.com/marketindex/) [Source](https://m.stock.naver.com/marketindex/bond/KR10YT=RR) [Source](https://m.stock.naver.com/marketindex/bond/US10YT=RR)
+    </div>
+  </div>
+
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const prev = { usdkrw:null, eurkrw:null, dxy:null, kr10y:null, us10y:null, spread10y:null };
+
+    function fmt(n, digits=2){
+      if (n === null || n === undefined || Number.isNaN(n)) return "-";
+      return Number(n).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+    }
+    function setStatus(s){
+      $("status").textContent = s;
+      const dot = $("dot");
+      dot.style.background = (s==="OK") ? "#22c55e" : (s==="WARN") ? "#f59e0b" : "#ef4444";
+    }
+    function chg(cur, prevVal, digits=2){
+      if (typeof cur !== "number" || typeof prevVal !== "number") return {text:"-", cls:""};
+      const diff = +(cur - prevVal).toFixed(digits);
+      const pct = prevVal ? +((diff / prevVal) * 100).toFixed(2) : 0;
+      const up = diff > 0;
+      return { text: `${up ? "▲" : "▼"} ${Math.abs(diff).toFixed(digits)} (${up ? "+" : ""}${pct}%)`, cls: up ? "up" : "down" };
+    }
+
+    // ----- Charts helpers -----
+    function mkChart(containerId, opts={}) {
+      const el = $(containerId);
+      const chart = LightweightCharts.createChart(el, {
+        layout: { background: { color: "rgba(0,0,0,0)" }, textColor: "rgba(234,240,255,.9)" },
+        grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
+        rightPriceScale: { borderColor: "rgba(255,255,255,.10)" },
+        timeScale: { borderColor: "rgba(255,255,255,.10)" },
+        crosshair: { mode: 1 },
+        ...opts
+      });
+      const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }));
+      ro.observe(el);
+      return chart;
+    }
+
+    async function fetchCandles(symbol, interval, range) {
+      const url = `/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`;
+      const r = await fetch(url, { cache:"no-store" });
+      return await r.json();
+    }
+
+    function toLCandles(rows) {
+      // LightweightCharts uses seconds timestamp
+      return rows.map(x => ({ time: Math.floor(x.t/1000), open:x.o, high:x.h, low:x.l, close:x.c }));
+    }
+    function toLLine(rows) {
+      return rows.map(x => ({ time: Math.floor(x.t/1000), value: x.c }));
+    }
+
+    // Charts init
+    const cUSD = mkChart("chart_usd");
+    const sUSD = cUSD.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444", borderVisible:false, wickUpColor:"#22c55e", wickDownColor:"#ef4444" });
+
+    const cDXY = mkChart("chart_dxy");
+    const sDXY = cDXY.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444", borderVisible:false, wickUpColor:"#22c55e", wickDownColor:"#ef4444" });
+
+    const cKR = mkChart("chart_kr10y");
+    const sKR = cKR.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444", borderVisible:false, wickUpColor:"#22c55e", wickDownColor:"#ef4444" });
+
+    const cSP = mkChart("chart_spread");
+    const sSP = cSP.addLineSeries({ color:"rgba(147,197,253,.95)", lineWidth:2 });
+
+    const cRSV = mkChart("chart_reserves");
+    const sRSV = cRSV.addHistogramSeries({ color:"rgba(59,130,246,.55)" });
+    const sRSVLine = cRSV.addLineSeries({ color:"rgba(34,197,94,.85)", lineWidth:2 });
+
+    async function loadCharts() {
+      // 데이터는 “쌓여야” 캔들이 생깁니다. 처음 실행 직후엔 몇 분 비어있을 수 있어요.
+      const usd = await fetchCandles("USDKRW", "30m", "7d");
+      sUSD.setData(toLCandles(usd)); cUSD.timeScale().fitContent();
+
+      const dxy = await fetchCandles("DXY", "30m", "7d");
+      sDXY.setData(toLCandles(dxy)); cDXY.timeScale().fitContent();
+
+      const kr = await fetchCandles("KR10Y", "30m", "7d");
+      sKR.setData(toLCandles(kr)); cKR.timeScale().fitContent();
+
+      const sp = await fetchCandles("SPREAD10Y", "30m", "30d");
+      sSP.setData(toLLine(sp)); cSP.timeScale().fitContent();
+    }
+
+    async function loadReserves() {
+      const r = await fetch("/api/reserves", { cache:"no-store" });
+      const j = await r.json();
+      // month -> time(초) 변환: 해당 월 1일
+      const pts = j.series.map(x => {
+        const [y,m] = x.month.split("-").map(Number);
+        const d = new Date(Date.UTC(y, m-1, 1));
+        return { time: Math.floor(d.getTime()/1000), value: x.value };
+      });
+      sRSV.setData(pts);
+      sRSVLine.setData(pts);
+      cRSV.timeScale().fitContent();
+    }
+
+    function setBrief(latest) {
+      const ul = $("briefList");
+      ul.innerHTML = "";
+
+      const items = [];
+      if (typeof latest.usdkrw === "number") items.push(`USD/KRW: ${latest.usdkrw.toFixed(2)} (실시간)`);
+      if (typeof latest.dxy === "number") items.push(`DXY: ${latest.dxy.toFixed(2)} (실시간, 실패 시 확인 필요)`);
+      if (typeof latest.spread10y === "number") items.push(`스프레드(US−KR 10Y): ${latest.spread10y.toFixed(3)}%p`);
+      items.push(`운영: 수집 실패는 숨기지 않고 WARN으로 표시`);
+
+      for (const t of items) {
+        const li = document.createElement("li");
+        li.textContent = t;
+        ul.appendChild(li);
+      }
+    }
+
+    async function tick(){
+      try{
+        const r = await fetch("/api/latest", { cache:"no-store" });
+        const j = await r.json();
+
+        $("asof").textContent = j.asofKST || "-";
+        setStatus(j.status || "WARN");
+
+        $("usdkrw").textContent = fmt(j.usdkrw, 2);
+        $("eurkrw").textContent = fmt(j.eurkrw, 2);
+        $("dxy").textContent = fmt(j.dxy, 2);
+        $("kr10y").textContent = (j.kr10y==null? "-" : fmt(j.kr10y, 3) + "%");
+        $("us10y").textContent = (j.us10y==null? "-" : fmt(j.us10y, 3) + "%");
+        $("spread").textContent = (j.spread10y==null? "-" : fmt(j.spread10y, 3) + "%p");
+
+        let c;
+        c = chg(j.usdkrw, prev.usdkrw, 2); $("usdchg").textContent=c.text; $("usdchg").className="chg " + c.cls;
+        c = chg(j.eurkrw, prev.eurkrw, 2); $("eurchg").textContent=c.text; $("eurchg").className="chg " + c.cls;
+        c = chg(j.dxy, prev.dxy, 2); $("dxychg").textContent=c.text; $("dxychg").className="chg " + c.cls;
+        c = chg(j.kr10y, prev.kr10y, 3); $("krchg").textContent=c.text; $("krchg").className="chg " + c.cls;
+        c = chg(j.us10y, prev.us10y, 3); $("uschg").textContent=c.text; $("uschg").className="chg " + c.cls;
+        c = chg(j.spread10y, prev.spread10y, 3); $("spchg").textContent=c.text; $("spchg").className="chg " + c.cls;
+
+        if (typeof j.usdkrw==="number") prev.usdkrw=j.usdkrw;
+        if (typeof j.eurkrw==="number") prev.eurkrw=j.eurkrw;
+        if (typeof j.dxy==="number") prev.dxy=j.dxy;
+        if (typeof j.kr10y==="number") prev.kr10y=j.kr10y;
+        if (typeof j.us10y==="number") prev.us10y=j.us10y;
+        if (typeof j.spread10y==="number") prev.spread10y=j.spread10y;
+
+        $("errors").textContent = (j.errors && j.errors.length)
+          ? ("최근 수집 경고: " + j.errors.join(" | "))
+          : "";
+
+        setBrief(j);
+      }catch(e){
+        setStatus("FAIL");
+        $("errors").textContent = "API 연결 실패: " + (e.message || e);
+      }
+    }
+
+    async function fullReload() {
+      await tick();
+      await loadCharts();
+      await loadReserves();
+    }
+
+    $("refreshBtn").addEventListener("click", fullReload);
+
+    // 첫 로드
+    fullReload();
+
+    // 10초마다 KPI는 계속 갱신
+    setInterval(tick, 10_000);
+
+    // 차트는 1분마다 새로 그림(너무 자주 그릴 필요 없음)
+    setInterval(loadCharts, 60_000);
+  </script>
+</body>
+</html>
