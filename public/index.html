@@ -696,9 +696,11 @@
   // Reserves: every 10min (monthly; not necessary to be frequent)
   setInterval(() => loadReserves().catch(()=>{}), 600_000);
 
-  // Report: every 60s
-  setInterval(() => loadReport().catch(()=>{}), 60_000);
+ // Report: every 2 hours
+setInterval(() => loadReport().catch(()=>{}), 2 * 60 * 60 * 1000);
+
 </script>
 </body>
 </html>
+
 
