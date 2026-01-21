@@ -8,8 +8,9 @@ const path = require("path");
 const fs = require("fs");
 const Database = require("better-sqlite3");
 
+const iconv = require("iconv-lite"); // ✅ 뉴스 한글 인코딩 대응
+
 // ✅ OpenAI Node SDK
-// package.json에 "openai" dependency 필요
 const { OpenAI } = require("openai"); // npm package: "openai" [Source](https://www.npmjs.com/package/openai)
 
 const app = express();
@@ -25,14 +26,12 @@ function kstNowString() {
   return `${kst.getUTCFullYear()}-${pad(kst.getUTCMonth()+1)}-${pad(kst.getUTCDate())} ${pad(kst.getUTCHours())}:${pad(kst.getUTCMinutes())}:${pad(kst.getUTCSeconds())} KST`;
 }
 function parseRangeToMs(range) {
-  // "7d", "30d", "24h" 지원
   const m = String(range || "7d").match(/^(\d+)([dh])$/);
   if (!m) return 7 * 24 * 60 * 60 * 1000;
   const n = parseInt(m[1], 10);
   return m[2] === "d" ? n * 24 * 60 * 60 * 1000 : n * 60 * 60 * 1000;
 }
 function intervalToMs(interval) {
-  // "10s", "1m", "30m", "2h"
   const m = String(interval || "30m").match(/^(\d+)([smh])$/);
   if (!m) return 30 * 60 * 1000;
   const n = parseInt(m[1], 10);
@@ -75,12 +74,11 @@ const ANALYSIS_TTL_MS = 2 * 60 * 60 * 1000; // 2h
 const analysisCache = new Map(); // key: symbol, value: { ts, payload }
 
 /** ---------- /api/analysis 쿨다운(429 보호) ---------- */
-// 429 발생 후 이 시간 동안은 OpenAI를 아예 호출하지 않음(캐시 비어있을 때 폭주 방지)
 const ANALYSIS_COOLDOWN_MS = 60 * 1000; // ✅ 60초
 let analysisCooldownUntil = 0; // epoch ms
 
-/** ---------- HTTP fetch ---------- */
-async function fetchText(url, headers = {}) {
+/** ---------- HTTP fetch (바이트 기반 + 인코딩 선택) ---------- */
+async function fetchText(url, headers = {}, encoding = "utf-8") {
   const res = await fetch(url, {
     headers: {
       "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120 Safari/537.36",
@@ -89,13 +87,22 @@ async function fetchText(url, headers = {}) {
     }
   });
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
-  return await res.text();
+
+  const buf = Buffer.from(await res.arrayBuffer());
+  let html = iconv.decode(buf, encoding);
+
+  // 깨진 문자(�)가 너무 많으면 utf-8로 한 번 더 시도(안전장치)
+  const broken = (html.match(/�/g) || []).length;
+  if (broken > 20 && encoding !== "utf-8") {
+    html = iconv.decode(buf, "utf-8");
+  }
+  return html;
 }
 
 /** ---------- 크롤러 ---------- */
 async function crawlNaverFx() {
   const url = "https://finance.naver.com/marketindex/";
-  const html = await fetchText(url);
+  const html = await fetchText(url); // utf-8로 충분한 경우가 많음
   const $ = cheerio.load(html);
 
   let usd = null, eur = null;
@@ -251,13 +258,14 @@ app.get("/api/reserves", (req, res) => {
 
 /**
  * ✅ /api/market/today
- * - 네이버 금융 주요뉴스 텍스트 기반 크롤링
+ * - 네이버 금융 주요뉴스 크롤링
+ * - 핵심: EUC-KR 디코딩 적용 (깨짐 방지)
  * - Source: https://finance.naver.com/news/mainnews.naver [Source](https://finance.naver.com/news/mainnews.naver)
  */
 app.get("/api/market/today", async (req, res) => {
   try {
     const url = "https://finance.naver.com/news/mainnews.naver";
-    const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
+    const html = await fetchText(url, { "Referer": "https://finance.naver.com/" }, "euc-kr");
     const $ = cheerio.load(html);
 
     const items = [];
@@ -294,14 +302,13 @@ app.get("/api/market/today", async (req, res) => {
 /**
  * ✅ /api/analysis (LLM 문장 생성)
  * - 2시간 캐시 + 429 쿨다운(60초) + 폴백(항상 200)
- * - 429가 한 번 나면 60초 동안 OpenAI 호출 금지(폭주 방지)
- * - 캐시가 생기면 2시간은 OpenAI 호출 거의 없음
+ * - 네이버 뉴스는 EUC-KR로 디코딩
  */
 app.get("/api/analysis", async (req, res) => {
   const symbol = String(req.query.symbol || "USDKRW").toUpperCase();
   const now = Date.now();
 
-  // 0) 캐시 히트(2시간)면 즉시 반환
+  // 0) 캐시 히트(2시간)
   const cached = analysisCache.get(symbol);
   if (cached && (now - cached.ts) < ANALYSIS_TTL_MS) {
     return res.status(200).json({
@@ -311,7 +318,7 @@ app.get("/api/analysis", async (req, res) => {
     });
   }
 
-  // 1) 쿨다운 기간이면 OpenAI 호출 금지 → 폴백(200)
+  // 1) 쿨다운 기간이면 OpenAI 호출 금지
   if (now < analysisCooldownUntil) {
     const waitSec = Math.ceil((analysisCooldownUntil - now) / 1000);
 
@@ -365,10 +372,10 @@ app.get("/api/analysis", async (req, res) => {
       };
     }
 
-    // 오늘의 증시(간단히 5개)
+    // 오늘의 증시(간단히 5개, EUC-KR 디코딩)
     const market = await (async () => {
       const url = "https://finance.naver.com/news/mainnews.naver";
-      const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
+      const html = await fetchText(url, { "Referer": "https://finance.naver.com/" }, "euc-kr");
       const $ = cheerio.load(html);
       const items = [];
       $("a").each((_, el) => {
@@ -448,7 +455,7 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
       analysis: text
     };
 
-    // 2) 성공하면 캐시 저장(2시간)
+    // 성공하면 캐시 저장(2시간)
     analysisCache.set(symbol, { ts: now, payload });
 
     return res.status(200).json({ ...payload, cached: false });
@@ -457,7 +464,7 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
     const msg = String(e?.message || e);
     const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("rate limit");
 
-    // 3) 429면 쿨다운 락 걸기(60초)
+    // 429면 쿨다운 락 걸기(60초)
     if (isRateLimit) {
       analysisCooldownUntil = Date.now() + ANALYSIS_COOLDOWN_MS;
 
@@ -480,7 +487,7 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
       });
     }
 
-    // 4) 기타 오류도 200 폴백(프론트 안정)
+    // 기타 오류도 200 폴백(프론트 안정)
     return res.status(200).json({
       asofKST: kstNowString(),
       symbol,
@@ -495,6 +502,8 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
+
 
 
 
