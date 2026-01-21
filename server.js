@@ -8,8 +8,9 @@ const path = require("path");
 const fs = require("fs");
 const Database = require("better-sqlite3");
 
-// ✅ OpenAI Node SDK (package.json에 openai 추가 필요)
-const OpenAI = require("openai"); // npm package: "openai" [Source](https://www.npmjs.com/package/openai)
+// ✅ OpenAI Node SDK
+// package.json에 "openai" dependency 필요
+const { OpenAI } = require("openai"); // npm package: "openai" [Source](https://www.npmjs.com/package/openai)
 
 const app = express();
 app.use(cors());
@@ -31,8 +32,7 @@ function parseRangeToMs(range) {
   return m[2] === "d" ? n * 24 * 60 * 60 * 1000 : n * 60 * 60 * 1000;
 }
 function intervalToMs(interval) {
-  // 기존: "30m", "2h"
-  // ✅ 확장: "10s", "1m", "30m", "2h"
+  // "10s", "1m", "30m", "2h"
   const m = String(interval || "30m").match(/^(\d+)([smh])$/);
   if (!m) return 30 * 60 * 1000;
   const n = parseInt(m[1], 10);
@@ -69,6 +69,10 @@ const state = {
   spread10y: null,
   errors: []
 };
+
+/** ---------- /api/analysis 캐시(2시간) ---------- */
+const ANALYSIS_TTL_MS = 2 * 60 * 60 * 1000; // 2h
+const analysisCache = new Map(); // key: symbol, value: { ts, payload }
 
 /** ---------- HTTP fetch ---------- */
 async function fetchText(url, headers = {}) {
@@ -242,8 +246,8 @@ app.get("/api/reserves", (req, res) => {
 
 /**
  * ✅ /api/market/today
- * - 네이버 금융 주요뉴스 텍스트 기반 크롤링(구조 변경에 최대한 버티는 방식)
- * - Source: https://finance.naver.com/news/mainnews.naver
+ * - 네이버 금융 주요뉴스 텍스트 기반 크롤링
+ * - Source: https://finance.naver.com/news/mainnews.naver [Source](https://finance.naver.com/news/mainnews.naver)
  */
 app.get("/api/market/today", async (req, res) => {
   try {
@@ -251,7 +255,6 @@ app.get("/api/market/today", async (req, res) => {
     const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
     const $ = cheerio.load(html);
 
-    // 제목 링크들 상위 일부 추출
     const items = [];
     $("a").each((_, el) => {
       const href = $(el).attr("href") || "";
@@ -264,7 +267,6 @@ app.get("/api/market/today", async (req, res) => {
       }
     });
 
-    // 중복 제거 + 상위 8개
     const uniq = [];
     const seen = new Set();
     for (const it of items) {
@@ -285,23 +287,42 @@ app.get("/api/market/today", async (req, res) => {
 });
 
 /**
- * ✅ /api/analysis (LLM 문장 생성)
+ * ✅ /api/analysis (LLM 문장 생성) + 2시간 캐시 + 429 폴백
  * - 입력: ?symbol=USDKRW|EURKRW (기본 USDKRW)
- * - 데이터: 최신 KPI(/api/latest) + 1분봉(24h) + 30분봉(7d) + 오늘의 증시(/api/market/today)
- * - OpenAI KEY: process.env.OPENAI_API_KEY (Render Environment에서 설정 완료)
+ * - 데이터: 최신 KPI(state) + 1분봉(24h) + 30분봉(7d) + 오늘의 증시(네이버)
+ * - OpenAI KEY: process.env.OPENAI_API_KEY
+ * - 429 Rate limit이면 캐시가 있으면 캐시 반환(200), 없으면 안내문 반환(200)
  */
 app.get("/api/analysis", async (req, res) => {
+  const symbol = String(req.query.symbol || "USDKRW").toUpperCase();
+  const now = Date.now();
+
+  // 0) 캐시 히트
+  const cached = analysisCache.get(symbol);
+  if (cached && (now - cached.ts) < ANALYSIS_TTL_MS) {
+    return res.status(200).json({
+      ...cached.payload,
+      cached: true,
+      cacheAgeSec: Math.floor((now - cached.ts) / 1000),
+    });
+  }
+
   try {
     const apiKey = process.env.OPENAI_API_KEY;
-    if (!apiKey) return res.status(400).json({ error: "OPENAI_API_KEY is missing in environment" });
-
-    const symbol = String(req.query.symbol || "USDKRW").toUpperCase();
+    if (!apiKey) {
+      // 키 없을 때도 200으로 안내(프론트 NO-LLM 방지)
+      return res.status(200).json({
+        asofKST: kstNowString(),
+        symbol,
+        analysis: "OPENAI_API_KEY가 설정되어 있지 않아 분석을 생성할 수 없습니다.",
+        degraded: true
+      });
+    }
 
     const latest = state;
     const candles1m = getCandles(symbol, "1m", "24h");
     const candles30m = getCandles(symbol, "30m", "7d");
 
-    // 간단 요약 통계
     function summarizeCandles(cs) {
       if (!cs || cs.length < 2) return { n: cs?.length || 0 };
       const first = cs[0].o;
@@ -319,8 +340,7 @@ app.get("/api/analysis", async (req, res) => {
       };
     }
 
-    // market today (내부에서 다시 크롤링하지 않고, 동일 로직을 한번 더 실행해도 되지만 여기선 직접 호출 대신 재사용 형태로 구현)
-    // 간단히: /api/market/today 내용을 내부 함수로 다시 얻는 대신, 동일 크롤을 한 번 더 실행.
+    // 오늘의 증시(간단히 5개)
     const market = await (async () => {
       const url = "https://finance.naver.com/news/mainnews.naver";
       const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
@@ -391,7 +411,7 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
 
     const text = completion?.choices?.[0]?.message?.content?.trim() || "";
 
-    res.json({
+    const payload = {
       asofKST: kstNowString(),
       symbol,
       inputs: {
@@ -401,9 +421,44 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
         marketToday: market
       },
       analysis: text
-    });
+    };
+
+    // 1) 성공하면 캐시 저장
+    analysisCache.set(symbol, { ts: now, payload });
+
+    return res.status(200).json({ ...payload, cached: false });
+
   } catch (e) {
-    res.status(500).json({ error: String(e.message || e) });
+    const msg = String(e?.message || e);
+    const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("rate limit");
+
+    if (isRateLimit) {
+      const cached2 = analysisCache.get(symbol);
+      if (cached2) {
+        return res.status(200).json({
+          ...cached2.payload,
+          cached: true,
+          degraded: true,
+          warning: "OpenAI rate-limited; serving cached analysis (2h TTL)."
+        });
+      }
+      return res.status(200).json({
+        asofKST: kstNowString(),
+        symbol,
+        analysis: "현재 OpenAI 요청 한도(RPM)에 걸려 분석을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
+        degraded: true,
+        warning: "OpenAI rate-limited; no cache available yet."
+      });
+    }
+
+    // 기타 오류도 200으로 폴백(프론트 안정)
+    return res.status(200).json({
+      asofKST: kstNowString(),
+      symbol,
+      analysis: "현재 분석 생성 중 오류가 발생했습니다. 잠시 후 다시 시도해 주세요.",
+      degraded: true,
+      error: msg
+    });
   }
 });
 
@@ -411,6 +466,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
