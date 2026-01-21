@@ -1,5 +1,5 @@
-// server.js (완성본: tick 저장 + OHLC 캔들 API + reserves JSON 제공)
-// 실행: node .\server.js
+// server.js (완성본: tick 저장 + OHLC 캔들 API + reserves JSON 제공 + market/today + analysis)
+// 실행: node ./server.js
 
 const express = require("express");
 const cheerio = require("cheerio");
@@ -7,6 +7,9 @@ const cors = require("cors");
 const path = require("path");
 const fs = require("fs");
 const Database = require("better-sqlite3");
+
+// ✅ OpenAI Node SDK (package.json에 openai 추가 필요)
+const OpenAI = require("openai"); // npm package: "openai" [Source](https://www.npmjs.com/package/openai)
 
 const app = express();
 app.use(cors());
@@ -28,16 +31,18 @@ function parseRangeToMs(range) {
   return m[2] === "d" ? n * 24 * 60 * 60 * 1000 : n * 60 * 60 * 1000;
 }
 function intervalToMs(interval) {
-  // "30m", "2h"
-  const m = String(interval || "30m").match(/^(\d+)([mh])$/);
+  // 기존: "30m", "2h"
+  // ✅ 확장: "10s", "1m", "30m", "2h"
+  const m = String(interval || "30m").match(/^(\d+)([smh])$/);
   if (!m) return 30 * 60 * 1000;
   const n = parseInt(m[1], 10);
-  return m[2] === "m" ? n * 60 * 1000 : n * 60 * 60 * 1000;
+  if (m[2] === "s") return n * 1000;
+  if (m[2] === "m") return n * 60 * 1000;
+  return n * 60 * 60 * 1000;
 }
 function bucketStart(ts, bucketMs) {
   return Math.floor(ts / bucketMs) * bucketMs;
 }
-
 
 /** ---------- DB (SQLite) ---------- */
 const db = new Database("data.db");
@@ -55,7 +60,6 @@ CREATE INDEX IF NOT EXISTS idx_ticks_symbol_ts ON ticks(symbol, ts);
 const insertTick = db.prepare("INSERT INTO ticks (ts, symbol, value) VALUES (?, ?, ?)");
 const selectTicks = db.prepare("SELECT ts, value FROM ticks WHERE symbol=? AND ts>=? AND ts<=? ORDER BY ts ASC");
 
-
 /** ---------- 상태 ---------- */
 const state = {
   asofKST: null,
@@ -65,7 +69,6 @@ const state = {
   spread10y: null,
   errors: []
 };
-
 
 /** ---------- HTTP fetch ---------- */
 async function fetchText(url, headers = {}) {
@@ -79,7 +82,6 @@ async function fetchText(url, headers = {}) {
   if (!res.ok) throw new Error(`HTTP ${res.status} ${url}`);
   return await res.text();
 }
-
 
 /** ---------- 크롤러 ---------- */
 async function crawlNaverFx() {
@@ -113,27 +115,15 @@ async function crawlNaverBond(url) {
   return parseFloat(m[1]);
 }
 
-/**
- * ✅ DXY 크롤링 (Investing → 네이버로 교체)
- * - 기존 Investing: Render에서 HTTP 403으로 자주 실패 [Source](https://fx-dashboard-2zo3.onrender.com/api/latest)
- * - 네이버: HTML에 값이 그대로 내려옴(예: 98.87) [Source](https://m.stock.naver.com/marketindex/exchange/.DXY)
- *
- * "최소 수정"을 위해 함수명은 crawlInvestingDXY 그대로 유지합니다.
- */
+// ✅ DXY (네이버)
 async function crawlInvestingDXY() {
   const url = "https://m.stock.naver.com/marketindex/exchange/.DXY";
-  const html = await fetchText(url, {
-    "Referer": "https://m.stock.naver.com/",
-  });
-
+  const html = await fetchText(url, { "Referer": "https://m.stock.naver.com/" });
   const $ = cheerio.load(html);
   const bodyText = $("body").text().replace(/\s+/g, " ").trim();
 
-  // 1) 가장 안정적인 패턴: "달러인덱스" 뒤에 나오는 첫 숫자
-  // (페이지에 "달러인덱스" + 굵은 숫자가 내려오는 것이 확인됨) [Source](https://m.stock.naver.com/marketindex/exchange/.DXY)
   let m = bodyText.match(/달러인덱스\s*([0-9]{2,3}(?:\.[0-9]+)?)/);
 
-  // 2) fallback: 텍스트 안에서 60~200 사이 숫자 하나 찾기
   if (!m) {
     const candidates = [];
     const tokens = bodyText.replace(/[^\d.]/g, " ").split(/\s+/).filter(Boolean);
@@ -146,10 +136,8 @@ async function crawlInvestingDXY() {
     if (!candidates.length) throw new Error("Naver DXY parse failed");
     return candidates[0];
   }
-
   return parseFloat(m[1]);
 }
-
 
 /** ---------- 데이터 수집 + tick 저장 ---------- */
 function saveTicks(ts, map) {
@@ -197,7 +185,6 @@ async function refresh() {
   state.status = status;
   state.errors = errors.slice(0, 6);
 
-  // tick 저장(차트용 원천 데이터)
   saveTicks(ts, {
     USDKRW: state.usdkrw,
     EURKRW: state.eurkrw,
@@ -211,6 +198,27 @@ async function refresh() {
 setInterval(refresh, 10_000);
 refresh();
 
+/** ---------- 공통: OHLC ---------- */
+function getCandles(symbol, interval, range) {
+  const bucketMs = intervalToMs(interval);
+  const end = nowMs();
+  const start = end - parseRangeToMs(range);
+  const rows = selectTicks.all(symbol, start, end);
+
+  const map = new Map();
+  for (const r of rows) {
+    const b = bucketStart(r.ts, bucketMs);
+    const v = r.value;
+    if (!map.has(b)) map.set(b, { t: b, o: v, h: v, l: v, c: v });
+    else {
+      const x = map.get(b);
+      x.h = Math.max(x.h, v);
+      x.l = Math.min(x.l, v);
+      x.c = v;
+    }
+  }
+  return Array.from(map.values()).sort((a, b) => a.t - b.t);
+}
 
 /** ---------- API ---------- */
 app.get("/api/latest", (req, res) => res.json(state));
@@ -219,29 +227,7 @@ app.get("/api/candles", (req, res) => {
   const symbol = String(req.query.symbol || "USDKRW").toUpperCase();
   const interval = String(req.query.interval || "30m");
   const range = String(req.query.range || "7d");
-
-  const bucketMs = intervalToMs(interval);
-  const end = nowMs();
-  const start = end - parseRangeToMs(range);
-
-  const rows = selectTicks.all(symbol, start, end); // [{ts,value},...]
-
-  // OHLC 집계
-  const map = new Map();
-  for (const r of rows) {
-    const b = bucketStart(r.ts, bucketMs);
-    const v = r.value;
-    if (!map.has(b)) {
-      map.set(b, { t: b, o: v, h: v, l: v, c: v });
-    } else {
-      const x = map.get(b);
-      x.h = Math.max(x.h, v);
-      x.l = Math.min(x.l, v);
-      x.c = v;
-    }
-  }
-  const out = Array.from(map.values()).sort((a,b)=>a.t-b.t);
-  res.json(out);
+  res.json(getCandles(symbol, interval, range));
 });
 
 app.get("/api/reserves", (req, res) => {
@@ -254,10 +240,179 @@ app.get("/api/reserves", (req, res) => {
   }
 });
 
+/**
+ * ✅ /api/market/today
+ * - 네이버 금융 주요뉴스 텍스트 기반 크롤링(구조 변경에 최대한 버티는 방식)
+ * - Source: https://finance.naver.com/news/mainnews.naver
+ */
+app.get("/api/market/today", async (req, res) => {
+  try {
+    const url = "https://finance.naver.com/news/mainnews.naver";
+    const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
+    const $ = cheerio.load(html);
+
+    // 제목 링크들 상위 일부 추출
+    const items = [];
+    $("a").each((_, el) => {
+      const href = $(el).attr("href") || "";
+      const title = $(el).text().replace(/\s+/g, " ").trim();
+      if (!title) return;
+
+      if (href.includes("news_read.naver")) {
+        const link = href.startsWith("http") ? href : `https://finance.naver.com${href}`;
+        items.push({ title, link });
+      }
+    });
+
+    // 중복 제거 + 상위 8개
+    const uniq = [];
+    const seen = new Set();
+    for (const it of items) {
+      if (seen.has(it.link)) continue;
+      seen.add(it.link);
+      uniq.push(it);
+      if (uniq.length >= 8) break;
+    }
+
+    res.json({
+      asofKST: kstNowString(),
+      source: url,
+      headlines: uniq
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
+/**
+ * ✅ /api/analysis (LLM 문장 생성)
+ * - 입력: ?symbol=USDKRW|EURKRW (기본 USDKRW)
+ * - 데이터: 최신 KPI(/api/latest) + 1분봉(24h) + 30분봉(7d) + 오늘의 증시(/api/market/today)
+ * - OpenAI KEY: process.env.OPENAI_API_KEY (Render Environment에서 설정 완료)
+ */
+app.get("/api/analysis", async (req, res) => {
+  try {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return res.status(400).json({ error: "OPENAI_API_KEY is missing in environment" });
+
+    const symbol = String(req.query.symbol || "USDKRW").toUpperCase();
+
+    const latest = state;
+    const candles1m = getCandles(symbol, "1m", "24h");
+    const candles30m = getCandles(symbol, "30m", "7d");
+
+    // 간단 요약 통계
+    function summarizeCandles(cs) {
+      if (!cs || cs.length < 2) return { n: cs?.length || 0 };
+      const first = cs[0].o;
+      const last = cs[cs.length - 1].c;
+      let hi = -Infinity, lo = Infinity;
+      for (const x of cs) { hi = Math.max(hi, x.h); lo = Math.min(lo, x.l); }
+      const chg = last - first;
+      const chgPct = first ? (chg / first) * 100 : null;
+      return {
+        n: cs.length,
+        first, last,
+        hi, lo,
+        chg: +chg.toFixed(4),
+        chgPct: chgPct == null ? null : +chgPct.toFixed(3)
+      };
+    }
+
+    // market today (내부에서 다시 크롤링하지 않고, 동일 로직을 한번 더 실행해도 되지만 여기선 직접 호출 대신 재사용 형태로 구현)
+    // 간단히: /api/market/today 내용을 내부 함수로 다시 얻는 대신, 동일 크롤을 한 번 더 실행.
+    const market = await (async () => {
+      const url = "https://finance.naver.com/news/mainnews.naver";
+      const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
+      const $ = cheerio.load(html);
+      const items = [];
+      $("a").each((_, el) => {
+        const href = $(el).attr("href") || "";
+        const title = $(el).text().replace(/\s+/g, " ").trim();
+        if (!title) return;
+        if (href.includes("news_read.naver")) {
+          const link = href.startsWith("http") ? href : `https://finance.naver.com${href}`;
+          items.push({ title, link });
+        }
+      });
+      const uniq = [];
+      const seen = new Set();
+      for (const it of items) {
+        if (seen.has(it.link)) continue;
+        seen.add(it.link);
+        uniq.push(it);
+        if (uniq.length >= 5) break;
+      }
+      return { source: url, headlines: uniq };
+    })();
+
+    const s1 = summarizeCandles(candles1m);
+    const s7 = summarizeCandles(candles30m);
+
+    const prompt = `
+너는 한국 거주 개인의 "환율 매입 관점" 조언을 하는 애널리스트다.
+아래 데이터만 근거로, 과장 없이 '오늘 매입 판단'을 한국어로 작성해라.
+반드시 포함:
+- (1) 24시간/7일 요약(변동률, 고점/저점)
+- (2) 현재 레벨(USDKRW/EURKRW, DXY, 금리, 스프레드)
+- (3) 오늘 시장 헤드라인이 주는 리스크/심리
+- (4) "지금 당장 매입 vs 분할매수 vs 대기" 중 하나를 결론으로, 근거 3개
+- (5) 마지막 줄에 면책: "투자 조언이 아님"
+
+[현재 KPI]
+asofKST=${latest.asofKST}
+USDKRW=${latest.usdkrw}
+EURKRW=${latest.eurkrw}
+DXY=${latest.dxy}
+KR10Y=${latest.kr10y}
+US10Y=${latest.us10y}
+SPREAD10Y=${latest.spread10y}
+
+[${symbol} 24h 요약(1m)]
+${JSON.stringify(s1)}
+
+[${symbol} 7d 요약(30m)]
+${JSON.stringify(s7)}
+
+[오늘의 증시 주요뉴스(네이버)]
+${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
+`.trim();
+
+    const client = new OpenAI({ apiKey });
+
+    const completion = await client.chat.completions.create({
+      model: "gpt-4.1-mini",
+      messages: [
+        { role: "system", content: "너는 금융 데이터 요약에 강한 한국어 애널리스트다." },
+        { role: "user", content: prompt }
+      ],
+      temperature: 0.4
+    });
+
+    const text = completion?.choices?.[0]?.message?.content?.trim() || "";
+
+    res.json({
+      asofKST: kstNowString(),
+      symbol,
+      inputs: {
+        latest,
+        summary24h_1m: s1,
+        summary7d_30m: s7,
+        marketToday: market
+      },
+      analysis: text
+    });
+  } catch (e) {
+    res.status(500).json({ error: String(e.message || e) });
+  }
+});
+
 const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
+
 
 
 
