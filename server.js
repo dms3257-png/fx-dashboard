@@ -74,6 +74,11 @@ const state = {
 const ANALYSIS_TTL_MS = 2 * 60 * 60 * 1000; // 2h
 const analysisCache = new Map(); // key: symbol, value: { ts, payload }
 
+/** ---------- /api/analysis 쿨다운(429 보호) ---------- */
+// 429 발생 후 이 시간 동안은 OpenAI를 아예 호출하지 않음(캐시 비어있을 때 폭주 방지)
+const ANALYSIS_COOLDOWN_MS = 60 * 1000; // ✅ 60초
+let analysisCooldownUntil = 0; // epoch ms
+
 /** ---------- HTTP fetch ---------- */
 async function fetchText(url, headers = {}) {
   const res = await fetch(url, {
@@ -287,17 +292,16 @@ app.get("/api/market/today", async (req, res) => {
 });
 
 /**
- * ✅ /api/analysis (LLM 문장 생성) + 2시간 캐시 + 429 폴백
- * - 입력: ?symbol=USDKRW|EURKRW (기본 USDKRW)
- * - 데이터: 최신 KPI(state) + 1분봉(24h) + 30분봉(7d) + 오늘의 증시(네이버)
- * - OpenAI KEY: process.env.OPENAI_API_KEY
- * - 429 Rate limit이면 캐시가 있으면 캐시 반환(200), 없으면 안내문 반환(200)
+ * ✅ /api/analysis (LLM 문장 생성)
+ * - 2시간 캐시 + 429 쿨다운(60초) + 폴백(항상 200)
+ * - 429가 한 번 나면 60초 동안 OpenAI 호출 금지(폭주 방지)
+ * - 캐시가 생기면 2시간은 OpenAI 호출 거의 없음
  */
 app.get("/api/analysis", async (req, res) => {
   const symbol = String(req.query.symbol || "USDKRW").toUpperCase();
   const now = Date.now();
 
-  // 0) 캐시 히트
+  // 0) 캐시 히트(2시간)면 즉시 반환
   const cached = analysisCache.get(symbol);
   if (cached && (now - cached.ts) < ANALYSIS_TTL_MS) {
     return res.status(200).json({
@@ -307,10 +311,31 @@ app.get("/api/analysis", async (req, res) => {
     });
   }
 
+  // 1) 쿨다운 기간이면 OpenAI 호출 금지 → 폴백(200)
+  if (now < analysisCooldownUntil) {
+    const waitSec = Math.ceil((analysisCooldownUntil - now) / 1000);
+
+    if (cached) {
+      return res.status(200).json({
+        ...cached.payload,
+        cached: true,
+        degraded: true,
+        warning: `Cooldown active (${waitSec}s). Serving cached analysis.`,
+      });
+    }
+
+    return res.status(200).json({
+      asofKST: kstNowString(),
+      symbol,
+      analysis: `현재 OpenAI 요청 한도 보호를 위해 잠시 대기 중입니다. (${waitSec}초 후 재시도)`,
+      degraded: true,
+      warning: "Cooldown active; skipping OpenAI call to avoid repeated 429.",
+    });
+  }
+
   try {
     const apiKey = process.env.OPENAI_API_KEY;
     if (!apiKey) {
-      // 키 없을 때도 200으로 안내(프론트 NO-LLM 방지)
       return res.status(200).json({
         asofKST: kstNowString(),
         symbol,
@@ -423,7 +448,7 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
       analysis: text
     };
 
-    // 1) 성공하면 캐시 저장
+    // 2) 성공하면 캐시 저장(2시간)
     analysisCache.set(symbol, { ts: now, payload });
 
     return res.status(200).json({ ...payload, cached: false });
@@ -432,26 +457,30 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
     const msg = String(e?.message || e);
     const isRateLimit = msg.includes("429") || msg.toLowerCase().includes("rate limit");
 
+    // 3) 429면 쿨다운 락 걸기(60초)
     if (isRateLimit) {
+      analysisCooldownUntil = Date.now() + ANALYSIS_COOLDOWN_MS;
+
       const cached2 = analysisCache.get(symbol);
       if (cached2) {
         return res.status(200).json({
           ...cached2.payload,
           cached: true,
           degraded: true,
-          warning: "OpenAI rate-limited; serving cached analysis (2h TTL)."
+          warning: "OpenAI rate-limited; cooldown enabled; serving cached analysis."
         });
       }
+
       return res.status(200).json({
         asofKST: kstNowString(),
         symbol,
         analysis: "현재 OpenAI 요청 한도(RPM)에 걸려 분석을 생성하지 못했습니다. 잠시 후 다시 시도해 주세요.",
         degraded: true,
-        warning: "OpenAI rate-limited; no cache available yet."
+        warning: "OpenAI rate-limited; cooldown enabled; no cache available yet."
       });
     }
 
-    // 기타 오류도 200으로 폴백(프론트 안정)
+    // 4) 기타 오류도 200 폴백(프론트 안정)
     return res.status(200).json({
       asofKST: kstNowString(),
       symbol,
@@ -466,6 +495,7 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
 
