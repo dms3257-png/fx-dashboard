@@ -419,10 +419,22 @@
       horzLines: { color: 'rgba(150,163,199,.10)' }
     },
     timeScale: {
-      borderColor: 'rgba(150,163,199,.18)',
-      timeVisible: true,
-      secondsVisible: false,
-    },
+  borderColor: 'rgba(150,163,199,.18)',
+  timeVisible: true,
+  secondsVisible: false,
+
+  // 차트 X축 시간을 KST(Asia/Seoul)로 표시
+  tickMarkFormatter: (time) => {
+    const d = new Date(time * 1000);
+    return d.toLocaleTimeString('ko-KR', {
+      timeZone: 'Asia/Seoul',
+      hour: '2-digit',
+      minute: '2-digit',
+      hour12: false,
+    });
+  },
+},
+
     rightPriceScale: { borderColor: 'rgba(150,163,199,.18)' },
     crosshair: {
       vertLine: { color: 'rgba(156,194,255,.25)' },
@@ -689,3 +701,4 @@
 </script>
 </body>
 </html>
+
