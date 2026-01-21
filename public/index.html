@@ -3,321 +3,689 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width,initial-scale=1" />
-  <title>환율·금리·달러인덱스·외환보유액</title>
+  <title>FX Dashboard</title>
 
-  <!-- Lightweight Charts (캔들에 최적, 붙이기 쉬움) -->
+  <!-- Lightweight Charts 4.2.1 -->
   <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
 
   <style>
     :root{
-      --bg0:#070b14;
-      --bg1:#0b1222;
-      --panel: rgba(20,30,52,.62);
-      --line: rgba(255,255,255,.10);
-      --text:#eaf0ff;
-      --muted:#a8b6d6;
-      --good:#22c55e;
-      --bad:#ef4444;
-      --warn:#f59e0b;
-      --chip: rgba(24,38,70,.75);
-      --shadow: 0 18px 50px rgba(0,0,0,.45);
-      --shadow2: 0 10px 24px rgba(0,0,0,.35);
-      --radius: 16px;
+      --bg:#0b1020;
+      --panel:#0f1733;
+      --panel2:#0c132b;
+      --text:#e7ecff;
+      --muted:#96a3c7;
+      --good:#35d07f;
+      --warn:#ffcc00;
+      --bad:#ff5577;
+      --line:#2a3560;
+      --chip:#18245a;
+      --chipText:#cfe0ff;
+      --mono: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+      --sans: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial, "Apple SD Gothic Neo", "Malgun Gothic", sans-serif;
     }
-    *{box-sizing:border-box}
+    html,body{height:100%}
     body{
       margin:0;
-      font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, "Noto Sans KR", Arial;
+      background: radial-gradient(1200px 900px at 10% 0%, #111b3d 0%, var(--bg) 60%) fixed;
       color:var(--text);
-      background:
-        radial-gradient(900px 520px at 18% 0%, rgba(59,130,246,.28), transparent 60%),
-        radial-gradient(760px 480px at 85% 8%, rgba(34,197,94,.18), transparent 58%),
-        radial-gradient(700px 520px at 60% 85%, rgba(168,85,247,.10), transparent 60%),
-        linear-gradient(180deg, var(--bg0), var(--bg1));
-      min-height:100vh;
+      font-family:var(--sans);
     }
-    .wrap{max-width:1280px; margin:0 auto; padding:22px;}
-    .top{display:flex; align-items:flex-start; justify-content:space-between; gap:16px; flex-wrap:wrap; margin-bottom:14px;}
-    .h1{font-weight:900; letter-spacing:-.03em; font-size:22px; line-height:1.2;}
-    .sub{margin-top:6px; color:var(--muted); font-size:13px;}
-    .meta{display:flex; gap:10px; align-items:center; flex-wrap:wrap; color:var(--muted); font-size:13px;}
-    .pill{display:inline-flex; align-items:center; gap:8px; padding:8px 10px; border:1px solid var(--line); background:rgba(255,255,255,.05); border-radius:999px; box-shadow: var(--shadow2); backdrop-filter: blur(10px);}
-    .dot{width:9px; height:9px; border-radius:50%;}
-    .btn{cursor:pointer; user-select:none; padding:8px 10px; border-radius:12px; border:1px solid var(--line); background:rgba(255,255,255,.06); color:var(--text); font-weight:800; box-shadow: var(--shadow2);}
+    a{color:#9cc2ff;text-decoration:none}
+    a:hover{text-decoration:underline}
 
-    .grid6{display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; margin: 12px 0 14px;}
-    .card{border:1px solid var(--line); border-radius: var(--radius); background: linear-gradient(180deg, rgba(255,255,255,.08), rgba(255,255,255,.03)); box-shadow: var(--shadow); padding:12px 12px 10px; min-height:92px; position:relative; overflow:hidden;}
-    .k{margin:0 0 6px; font-size:12px; color:var(--muted); font-weight:900; letter-spacing:.02em;}
-    .v{font-size:22px; font-weight:950; letter-spacing:-.02em;}
-    .row{margin-top:6px; display:flex; align-items:center; justify-content:space-between; gap:10px; color:var(--muted); font-size:12px;}
-    .chg{font-weight:900}
-    .up{color:var(--good)} .down{color:var(--bad)}
-    .chip{padding:5px 8px; border-radius:999px; background: var(--chip); border:1px solid rgba(255,255,255,.10); color:var(--muted); font-size:12px; font-weight:800; white-space:nowrap;}
-
-    .layout{display:grid; grid-template-columns: 1.55fr 1fr 1fr; gap:12px;}
-    .panel{border:1px solid var(--line); border-radius: var(--radius); background: var(--panel); box-shadow: var(--shadow); overflow:hidden; backdrop-filter: blur(10px);}
-    .ph{display:flex; align-items:center; justify-content:space-between; gap:10px; padding:10px 12px; border-bottom:1px solid rgba(255,255,255,.10); background: linear-gradient(180deg, rgba(255,255,255,.06), rgba(255,255,255,.02));}
-    .pt{font-weight:950; font-size:12px; color:var(--muted); letter-spacing:.02em;}
-    .content{padding:12px;}
-    .chartBox{height:240px; border:1px solid rgba(255,255,255,.10); border-radius:14px; overflow:hidden; background: rgba(0,0,0,.18);}
-    .chartBox.tall{height:260px;}
-    .rightCol{display:grid; grid-template-rows: 1fr 1fr; gap:12px;}
-    .brief ul{margin:0; padding-left:18px; color:var(--muted); font-size:13px; line-height:1.6;}
-    .errors{margin-top:10px; font-size:12px; color:#fecaca; line-height:1.4;}
-    .links{color:var(--muted); font-size:13px; line-height:1.7;}
-    .links a{color:#93c5fd}
-    .foot{margin-top:14px; color:var(--muted); font-size:12px; line-height:1.5;}
-
-    @media (max-width: 1100px){
-      .grid6{grid-template-columns: repeat(3, 1fr);}
-      .layout{grid-template-columns: 1fr;}
-      .rightCol{grid-template-rows:auto}
+    .wrap{
+      max-width:1200px;
+      margin:0 auto;
+      padding:18px 16px 30px;
     }
-    @media (max-width: 560px){
-      .grid6{grid-template-columns: repeat(2, 1fr);}
-      .v{font-size:20px}
-      .h1{font-size:18px}
+    .topbar{
+      display:flex;
+      gap:12px;
+      align-items:flex-end;
+      justify-content:space-between;
+      padding:10px 12px;
+      background:rgba(15,23,51,.55);
+      border:1px solid rgba(150,163,199,.18);
+      border-radius:14px;
+      backdrop-filter: blur(8px);
     }
+    .brand{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+    }
+    .brand h1{
+      margin:0;
+      font-size:18px;
+      letter-spacing:.2px;
+    }
+    .brand .sub{
+      font-size:12px;
+      color:var(--muted);
+    }
+    .statusRow{
+      display:flex;
+      gap:10px;
+      align-items:center;
+      flex-wrap:wrap;
+      justify-content:flex-end;
+    }
+    .chip{
+      display:inline-flex;
+      align-items:center;
+      gap:6px;
+      padding:6px 10px;
+      background:rgba(24,36,90,.55);
+      border:1px solid rgba(150,163,199,.18);
+      border-radius:999px;
+      color:var(--chipText);
+      font-size:12px;
+      white-space:nowrap;
+    }
+    .dot{width:8px;height:8px;border-radius:50%}
+    .dot.ok{background:var(--good)}
+    .dot.warn{background:var(--warn)}
+    .dot.bad{background:var(--bad)}
+    .mono{font-family:var(--mono)}
+
+    .grid{
+      margin-top:14px;
+      display:grid;
+      grid-template-columns: 1.4fr .9fr;
+      gap:14px;
+    }
+    @media (max-width: 980px){
+      .grid{grid-template-columns:1fr}
+    }
+
+    .card{
+      background:rgba(15,23,51,.65);
+      border:1px solid rgba(150,163,199,.18);
+      border-radius:14px;
+      overflow:hidden;
+    }
+    .cardHeader{
+      padding:12px 14px;
+      display:flex;
+      justify-content:space-between;
+      align-items:center;
+      border-bottom:1px solid rgba(150,163,199,.14);
+      background:rgba(12,19,43,.65);
+    }
+    .cardHeader .title{
+      font-size:13px;
+      color:#dbe5ff;
+      letter-spacing:.2px;
+      display:flex;
+      align-items:center;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .cardHeader .meta{
+      font-size:12px;
+      color:var(--muted);
+      white-space:nowrap;
+    }
+    .cardBody{padding:12px 14px}
+
+    .kpis{
+      display:grid;
+      grid-template-columns: repeat(3, 1fr);
+      gap:10px;
+    }
+    @media (max-width: 980px){
+      .kpis{grid-template-columns: repeat(2, 1fr);}
+    }
+    .kpi{
+      padding:10px 12px;
+      background:rgba(12,19,43,.55);
+      border:1px solid rgba(150,163,199,.14);
+      border-radius:12px;
+    }
+    .kpi .label{font-size:12px;color:var(--muted)}
+    .kpi .value{margin-top:6px;font-size:18px;font-weight:650;letter-spacing:.2px}
+    .kpi .sub{margin-top:4px;font-size:11px;color:var(--muted)}
+    .split{
+      margin-top:10px;
+      display:grid;
+      grid-template-columns: 1fr;
+      gap:14px;
+    }
+
+    .chart{
+      height:310px;
+    }
+    .chart.small{height:260px}
+
+    .panelText{
+      font-size:13px;
+      line-height:1.45;
+      color:#d8e2ff;
+    }
+    .panelText .muted{color:var(--muted)}
+    .panelText ul{margin:8px 0 0 18px}
+    .panelText li{margin:4px 0}
+    .hr{
+      height:1px;
+      background:rgba(150,163,199,.14);
+      margin:10px 0;
+    }
+    .pill{
+      display:inline-block;
+      padding:2px 8px;
+      border-radius:999px;
+      border:1px solid rgba(150,163,199,.18);
+      background:rgba(24,36,90,.35);
+      color:#d2e0ff;
+      font-size:11px;
+      margin-left:6px;
+      white-space:nowrap;
+    }
+    .warnBox{
+      margin-top:10px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(255,204,0,.25);
+      background:rgba(255,204,0,.08);
+      color:#ffeaa7;
+      font-size:12px;
+    }
+    .errBox{
+      margin-top:10px;
+      padding:10px 12px;
+      border-radius:12px;
+      border:1px solid rgba(255,85,119,.25);
+      background:rgba(255,85,119,.08);
+      color:#ffd0da;
+      font-size:12px;
+    }
+
+    .foot{
+      margin-top:16px;
+      color:var(--muted);
+      font-size:12px;
+      text-align:center;
+    }
+    .foot code{font-family:var(--mono);font-size:12px}
   </style>
 </head>
 
 <body>
-  <div class="wrap">
-    <div class="top">
-      <div>
-        <div class="h1">환율·금리·달러인덱스·외환보유액</div>
-        <div class="sub">10초 주기 갱신 · 하단 차트는 SQLite에 쌓인 데이터로 자동 생성</div>
-      </div>
-      <div class="meta">
-        <div class="pill"><span class="dot" id="dot"></span><span id="status">BOOT</span></div>
-        <div class="pill">As of <b id="asof" style="color:var(--text); font-weight:950">-</b></div>
-        <button class="btn" id="refreshBtn">지금 새로고침</button>
+<div class="wrap">
+
+  <div class="topbar">
+    <div class="brand">
+      <h1>FX Dashboard</h1>
+      <div class="sub">
+        KPI 10초 갱신 · 차트 60초 갱신 · 하단 차트는 SQLite 누적 데이터 기반
       </div>
     </div>
-
-    <div class="grid6">
-      <div class="card"><div class="k">USD/KRW (매매기준율·네이버)</div><div class="v" id="usdkrw">-</div><div class="row"><span class="chg" id="usdchg">-</span><span class="chip">Naver</span></div></div>
-      <div class="card"><div class="k">EUR/KRW (매매기준율·네이버)</div><div class="v" id="eurkrw">-</div><div class="row"><span class="chg" id="eurchg">-</span><span class="chip">Naver</span></div></div>
-      <div class="card"><div class="k">DXY (달러인덱스·Investing)</div><div class="v" id="dxy">-</div><div class="row"><span class="chg" id="dxychg">-</span><span class="chip">Investing</span></div></div>
-      <div class="card"><div class="k">KR10Y (국고채 10년)</div><div class="v" id="kr10y">-</div><div class="row"><span class="chg" id="krchg">-</span><span class="chip">Naver</span></div></div>
-      <div class="card"><div class="k">US10Y (미국채 10년)</div><div class="v" id="us10y">-</div><div class="row"><span class="chg" id="uschg">-</span><span class="chip">Naver</span></div></div>
-      <div class="card"><div class="k">Spread (US10Y − KR10Y)</div><div class="v" id="spread">-</div><div class="row"><span class="chg" id="spchg">-</span><span class="chip">계산</span></div></div>
-    </div>
-
-    <div class="layout">
-      <div class="panel">
-        <div class="ph"><div class="pt">USD/KRW 주간 30분봉 (자동)</div><span class="chip">1주</span></div>
-        <div class="content"><div class="chartBox" id="chart_usd"></div></div>
-      </div>
-
-      <div class="panel">
-        <div class="ph"><div class="pt">DXY 주간 30분봉 (실패 시 WARN)</div><span class="chip">1주</span></div>
-        <div class="content"><div class="chartBox" id="chart_dxy"></div></div>
-      </div>
-
-      <div class="panel">
-        <div class="ph"><div class="pt">KR10Y 주간 30분봉 (자동)</div><span class="chip">1주</span></div>
-        <div class="content"><div class="chartBox" id="chart_kr10y"></div></div>
-      </div>
-
-      <div class="panel" style="grid-column: 1 / span 2;">
-        <div class="ph"><div class="pt">Spread(US−KR 10Y) 추이 (30D)</div><span class="chip">30D</span></div>
-        <div class="content"><div class="chartBox tall" id="chart_spread"></div></div>
-      </div>
-
-      <div class="rightCol">
-        <div class="panel brief">
-          <div class="ph"><div class="pt">요약(규칙 기반)</div><span class="chip">Action Brief</span></div>
-          <div class="content">
-            <ul id="briefList"></ul>
-            <div class="errors" id="errors"></div>
-          </div>
-        </div>
-
-        <div class="panel">
-          <div class="ph"><div class="pt">외환보유액(월별 · JSON 수동관리)</div><span class="chip">BOK</span></div>
-          <div class="content"><div class="chartBox tall" id="chart_reserves"></div></div>
-        </div>
-      </div>
-    </div>
-
-    <div class="foot">
-      참고: DXY는 차단/구조 변경으로 수집 실패가 있을 수 있어 WARN으로 처리됩니다. [Source](https://kr.investing.com/indices/usdollar)
-      환율/금리 기준 페이지: [Source](https://finance.naver.com/marketindex/) [Source](https://m.stock.naver.com/marketindex/bond/KR10YT=RR) [Source](https://m.stock.naver.com/marketindex/bond/US10YT=RR)
+    <div class="statusRow">
+      <span class="chip" id="chip_status"><span class="dot ok"></span><span class="mono">STATUS</span> <span id="status_text">-</span></span>
+      <span class="chip"><span class="mono">asofKST</span> <span id="asof_text">-</span></span>
+      <span class="chip"><span class="mono">API</span> <a href="/api/latest" target="_blank" rel="noopener">/api/latest</a></span>
     </div>
   </div>
 
-  <script>
-    const $ = (id) => document.getElementById(id);
-    const prev = { usdkrw:null, eurkrw:null, dxy:null, kr10y:null, us10y:null, spread10y:null };
+  <div class="grid">
+    <!-- LEFT -->
+    <div class="card">
+      <div class="cardHeader">
+        <div class="title">
+          USD/KRW <span class="pill">1m · 24h</span>
+        </div>
+        <div class="meta">
+          <a href="/api/candles?symbol=USDKRW&interval=1m&range=24h" target="_blank" rel="noopener">candles</a>
+        </div>
+      </div>
+      <div class="cardBody">
+        <div id="chart_usd" class="chart"></div>
 
-    function fmt(n, digits=2){
-      if (n === null || n === undefined || Number.isNaN(n)) return "-";
-      return Number(n).toLocaleString("en-US", { minimumFractionDigits: digits, maximumFractionDigits: digits });
+        <div class="hr"></div>
+
+        <div class="kpis">
+          <div class="kpi">
+            <div class="label">USD/KRW</div>
+            <div class="value mono" id="k_usdkrw">-</div>
+            <div class="sub muted">네이버 금융</div>
+          </div>
+          <div class="kpi">
+            <div class="label">EUR/KRW</div>
+            <div class="value mono" id="k_eurkrw">-</div>
+            <div class="sub muted">네이버 금융</div>
+          </div>
+          <div class="kpi">
+            <div class="label">DXY</div>
+            <div class="value mono" id="k_dxy">-</div>
+            <div class="sub muted">NAVER (DXY)</div>
+          </div>
+          <div class="kpi">
+            <div class="label">KR10Y</div>
+            <div class="value mono" id="k_kr10y">-</div>
+            <div class="sub muted">네이버 채권</div>
+          </div>
+          <div class="kpi">
+            <div class="label">US10Y</div>
+            <div class="value mono" id="k_us10y">-</div>
+            <div class="sub muted">네이버 채권</div>
+          </div>
+          <div class="kpi">
+            <div class="label">Spread (US−KR 10Y)</div>
+            <div class="value mono" id="k_spread10y">-</div>
+            <div class="sub muted">US10Y − KR10Y</div>
+          </div>
+        </div>
+
+        <div class="split">
+          <div class="card" style="background:transparent;border:none">
+            <div class="cardHeader" style="border-radius:12px">
+              <div class="title">
+                DXY <span class="pill">line</span>
+              </div>
+              <div class="meta"><a href="/api/candles?symbol=DXY&interval=30m&range=7d" target="_blank" rel="noopener">candles</a></div>
+            </div>
+            <div class="cardBody" style="padding:10px 0 0">
+              <div id="chart_dxy" class="chart small"></div>
+            </div>
+          </div>
+
+          <div class="card" style="background:transparent;border:none">
+            <div class="cardHeader" style="border-radius:12px">
+              <div class="title">
+                KR10Y <span class="pill">line</span>
+              </div>
+              <div class="meta"><a href="/api/candles?symbol=KR10Y&interval=30m&range=30d" target="_blank" rel="noopener">candles</a></div>
+            </div>
+            <div class="cardBody" style="padding:10px 0 0">
+              <div id="chart_kr10y" class="chart small"></div>
+            </div>
+          </div>
+        </div>
+
+      </div>
+    </div>
+
+    <!-- RIGHT -->
+    <div class="card">
+      <div class="cardHeader">
+        <div class="title">
+          오늘의 리포트(AI) <span class="pill">/api/analysis</span>
+        </div>
+        <div class="meta">
+          <a href="/api/market/today" target="_blank" rel="noopener">market</a> ·
+          <a href="/api/analysis?symbol=USDKRW" target="_blank" rel="noopener">analysis</a>
+        </div>
+      </div>
+      <div class="cardBody">
+
+        <div class="panelText" id="panel_report">
+          <div class="muted">로딩 중… (엔드포인트가 아직 없으면 자동으로 /api/latest 기반 요약만 표시합니다)</div>
+        </div>
+
+        <div id="panel_warn" class="warnBox" style="display:none;"></div>
+        <div id="panel_err" class="errBox" style="display:none;"></div>
+
+        <div class="hr"></div>
+
+        <div class="cardHeader" style="border-radius:12px; margin-bottom:10px;">
+          <div class="title">
+            외환보유액(월별) <span class="pill">Line · Auto-scale</span>
+          </div>
+          <div class="meta">
+            <a href="/api/reserves" target="_blank" rel="noopener">/api/reserves</a>
+          </div>
+        </div>
+        <div id="chart_reserves" class="chart small"></div>
+        <div class="panelText muted" style="margin-top:8px">
+          단위: USD bn · 소스: BOK press release (public/data/reserves.json)
+        </div>
+
+      </div>
+    </div>
+  </div>
+
+  <div class="foot">
+    엔드포인트: <code>/api/latest</code>, <code>/api/candles</code>, <code>/api/reserves</code>
+  </div>
+</div>
+
+<script>
+  // ----------------------------
+  // Utilities
+  // ----------------------------
+  const fmt = (v, d=2) => (v === null || v === undefined || Number.isNaN(v)) ? '-' : Number(v).toFixed(d);
+  const fmtInt = (v) => (v === null || v === undefined || Number.isNaN(v)) ? '-' : Number(v).toLocaleString('en-US');
+  const sleep = (ms) => new Promise(r => setTimeout(r, ms));
+
+  async function fetchJSON(url){
+    const r = await fetch(url, { cache: 'no-store' });
+    if(!r.ok){
+      const t = await r.text().catch(()=> '');
+      const e = new Error(`HTTP ${r.status} ${r.statusText}`);
+      e.status = r.status;
+      e.body = t;
+      throw e;
     }
-    function setStatus(s){
-      $("status").textContent = s;
-      const dot = $("dot");
-      dot.style.background = (s==="OK") ? "#22c55e" : (s==="WARN") ? "#f59e0b" : "#ef4444";
+    return r.json();
+  }
+
+  function toLCandles(arr){
+    // expects: [{t,o,h,l,c}] where t is ms epoch
+    // lightweight-charts: {time: seconds}
+    return (arr || []).map(x => ({
+      time: Math.floor(x.t / 1000),
+      open: x.o, high: x.h, low: x.l, close: x.c
+    }));
+  }
+
+  function toLLineFromCandles(arr){
+    // line from close
+    return (arr || []).map(x => ({ time: Math.floor(x.t / 1000), value: x.c }));
+  }
+
+  function toLLineMonthly(series){
+    // expects: [{month:"YYYY-MM", value:Number}]
+    // Use first day of month as UTC for time
+    return (series || []).map(p => {
+      const [y,m] = p.month.split('-').map(Number);
+      const dt = new Date(Date.UTC(y, (m||1)-1, 1, 0, 0, 0));
+      return { time: Math.floor(dt.getTime()/1000), value: Number(p.value) };
+    });
+  }
+
+  function setStatusChip(status){
+    const el = document.getElementById('chip_status');
+    const dot = el.querySelector('.dot');
+    const st = (status || '').toUpperCase();
+    dot.classList.remove('ok','warn','bad');
+    if(st === 'OK') dot.classList.add('ok');
+    else if(st === 'WARN') dot.classList.add('warn');
+    else dot.classList.add('bad');
+    document.getElementById('status_text').textContent = st || '-';
+  }
+
+  // ----------------------------
+  // Charts
+  // ----------------------------
+  const commonChartOptions = {
+    layout: {
+      background: { type: 'solid', color: 'rgba(0,0,0,0)' },
+      textColor: '#d8e2ff',
+      fontFamily: getComputedStyle(document.documentElement).getPropertyValue('--sans').trim()
+    },
+    grid: {
+      vertLines: { color: 'rgba(150,163,199,.10)' },
+      horzLines: { color: 'rgba(150,163,199,.10)' }
+    },
+    timeScale: {
+      borderColor: 'rgba(150,163,199,.18)',
+      timeVisible: true,
+      secondsVisible: false,
+    },
+    rightPriceScale: { borderColor: 'rgba(150,163,199,.18)' },
+    crosshair: {
+      vertLine: { color: 'rgba(156,194,255,.25)' },
+      horzLine: { color: 'rgba(156,194,255,.25)' }
     }
-    function chg(cur, prevVal, digits=2){
-      if (typeof cur !== "number" || typeof prevVal !== "number") return {text:"-", cls:""};
-      const diff = +(cur - prevVal).toFixed(digits);
-      const pct = prevVal ? +((diff / prevVal) * 100).toFixed(2) : 0;
-      const up = diff > 0;
-      return { text: `${up ? "▲" : "▼"} ${Math.abs(diff).toFixed(digits)} (${up ? "+" : ""}${pct}%)`, cls: up ? "up" : "down" };
+  };
+
+  // USD chart (candles)
+  const cUSD = LightweightCharts.createChart(document.getElementById('chart_usd'), {
+    ...commonChartOptions,
+    height: 310,
+  });
+  const sUSDCandle = cUSD.addCandlestickSeries({
+    upColor: 'rgba(53,208,127,1)',
+    downColor: 'rgba(255,85,119,1)',
+    borderUpColor: 'rgba(53,208,127,1)',
+    borderDownColor: 'rgba(255,85,119,1)',
+    wickUpColor: 'rgba(53,208,127,1)',
+    wickDownColor: 'rgba(255,85,119,1)',
+  });
+
+  // DXY (line)
+  const cDXY = LightweightCharts.createChart(document.getElementById('chart_dxy'), {
+    ...commonChartOptions,
+    height: 260,
+  });
+  const sDXYLine = cDXY.addLineSeries({
+    color: 'rgba(156,194,255,1)',
+    lineWidth: 2,
+  });
+
+  // KR10Y (line)
+  const cKR10Y = LightweightCharts.createChart(document.getElementById('chart_kr10y'), {
+    ...commonChartOptions,
+    height: 260,
+  });
+  const sKR10YLine = cKR10Y.addLineSeries({
+    color: 'rgba(255,204,0,1)',
+    lineWidth: 2,
+  });
+
+  // Reserves (line, auto-scale)
+  const cRSV = LightweightCharts.createChart(document.getElementById('chart_reserves'), {
+    ...commonChartOptions,
+    height: 260,
+  });
+  const sRSVLine = cRSV.addLineSeries({
+    color: 'rgba(53,208,127,1)',
+    lineWidth: 2,
+  });
+
+  // Resize handler
+  function resizeCharts(){
+    const usdEl = document.getElementById('chart_usd');
+    cUSD.applyOptions({ width: usdEl.clientWidth });
+    const dxyEl = document.getElementById('chart_dxy');
+    cDXY.applyOptions({ width: dxyEl.clientWidth });
+    const krEl = document.getElementById('chart_kr10y');
+    cKR10Y.applyOptions({ width: krEl.clientWidth });
+    const rsvEl = document.getElementById('chart_reserves');
+    cRSV.applyOptions({ width: rsvEl.clientWidth });
+  }
+  window.addEventListener('resize', resizeCharts);
+
+  // ----------------------------
+  // Data loaders
+  // ----------------------------
+  async function loadLatest(){
+    const state = await fetchJSON('/api/latest');
+
+    setStatusChip(state.status);
+    document.getElementById('asof_text').textContent = state.asofKST || '-';
+
+    // KPIs
+    document.getElementById('k_usdkrw').textContent = fmtInt(state.usdkrw);
+    document.getElementById('k_eurkrw').textContent = fmtInt(state.eurkrw);
+    document.getElementById('k_dxy').textContent = fmt(state.dxy, 2);
+    document.getElementById('k_kr10y').textContent = fmt(state.kr10y, 3) + '%';
+    document.getElementById('k_us10y').textContent = fmt(state.us10y, 3) + '%';
+    document.getElementById('k_spread10y').textContent = fmt(state.spread10y, 3) + ' pp';
+
+    // errors panel
+    const errs = Array.isArray(state.errors) ? state.errors : [];
+    const warnEl = document.getElementById('panel_warn');
+    const errEl  = document.getElementById('panel_err');
+    warnEl.style.display = 'none';
+    errEl.style.display  = 'none';
+
+    if(state.status === 'WARN'){
+      warnEl.style.display = 'block';
+      warnEl.textContent = `WARN: 일부 지표 수집 실패 가능 (예: DXY). errors=${errs.length}`;
+    }
+    if(state.status && state.status !== 'OK' && state.status !== 'WARN'){
+      errEl.style.display = 'block';
+      errEl.textContent = `ERROR: 상태가 비정상입니다. errors=${errs.length}`;
     }
 
-    // ----- Charts helpers -----
-    function mkChart(containerId, opts={}) {
-      const el = $(containerId);
-      const chart = LightweightCharts.createChart(el, {
-        layout: { background: { color: "rgba(0,0,0,0)" }, textColor: "rgba(234,240,255,.9)" },
-        grid: { vertLines: { color: "rgba(255,255,255,.06)" }, horzLines: { color: "rgba(255,255,255,.06)" } },
-        rightPriceScale: { borderColor: "rgba(255,255,255,.10)" },
-        timeScale: { borderColor: "rgba(255,255,255,.10)" },
-        crosshair: { mode: 1 },
-        ...opts
-      });
-      const ro = new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth, height: el.clientHeight }));
-      ro.observe(el);
-      return chart;
+    return state;
+  }
+
+  async function loadCharts(){
+    // 1) USD/KRW: 1m + 24h (움직이는 체감)
+    const usd = await fetchJSON('/api/candles?symbol=USDKRW&interval=1m&range=24h');
+    sUSDCandle.setData(toLCandles(usd));
+    cUSD.timeScale().fitContent();
+
+    // 2) DXY: keep 30m + 7d (line)
+    const dxy = await fetchJSON('/api/candles?symbol=DXY&interval=30m&range=7d');
+    sDXYLine.setData(toLLineFromCandles(dxy));
+    cDXY.timeScale().fitContent();
+
+    // 3) KR10Y: keep 30m + 30d (line)
+    const kr = await fetchJSON('/api/candles?symbol=KR10Y&interval=30m&range=30d');
+    sKR10YLine.setData(toLLineFromCandles(kr));
+    cKR10Y.timeScale().fitContent();
+  }
+
+  async function loadReserves(){
+    // Monthly reserves (line + auto-scale via fitContent)
+    const j = await fetchJSON('/api/reserves');
+    const pts = toLLineMonthly(j.series || []);
+    sRSVLine.setData(pts);
+    cRSV.timeScale().fitContent();
+  }
+
+  async function loadReportFallback(state){
+    // fallback text: use /api/latest only
+    const el = document.getElementById('panel_report');
+    const lines = [];
+    lines.push(`<div><b>Action Brief</b> <span class="pill">fallback</span></div>`);
+    lines.push(`<div class="muted" style="margin-top:6px">AI 엔드포인트가 없으면 이 요약만 표시됩니다.</div>`);
+    lines.push(`<ul>`);
+    lines.push(`<li>USD/KRW: <span class="mono">${fmtInt(state.usdkrw)}</span></li>`);
+    lines.push(`<li>EUR/KRW: <span class="mono">${fmtInt(state.eurkrw)}</span></li>`);
+    lines.push(`<li>DXY: <span class="mono">${fmt(state.dxy,2)}</span></li>`);
+    lines.push(`<li>10Y: KR <span class="mono">${fmt(state.kr10y,3)}%</span> / US <span class="mono">${fmt(state.us10y,3)}%</span> (Spread <span class="mono">${fmt(state.spread10y,3)} pp</span>)</li>`);
+    lines.push(`</ul>`);
+    el.innerHTML = lines.join('');
+  }
+
+  async function loadReport(){
+    // Try /api/market/today + /api/analysis; if not present, fallback.
+    const el = document.getElementById('panel_report');
+
+    let state = null;
+    try{
+      state = await loadLatest();
+    }catch(e){
+      // if /api/latest fails, show raw error
+      el.innerHTML = `<div class="muted">/api/latest 실패: ${String(e.message || e)}</div>`;
+      return;
     }
 
-    async function fetchCandles(symbol, interval, range) {
-      const url = `/api/candles?symbol=${encodeURIComponent(symbol)}&interval=${encodeURIComponent(interval)}&range=${encodeURIComponent(range)}`;
-      const r = await fetch(url, { cache:"no-store" });
-      return await r.json();
+    // Try market today (optional)
+    let market = null;
+    try{
+      market = await fetchJSON('/api/market/today');
+    }catch(e){
+      // ignore (endpoint may not exist yet)
     }
 
-    function toLCandles(rows) {
-      // LightweightCharts uses seconds timestamp
-      return rows.map(x => ({ time: Math.floor(x.t/1000), open:x.o, high:x.h, low:x.l, close:x.c }));
-    }
-    function toLLine(rows) {
-      return rows.map(x => ({ time: Math.floor(x.t/1000), value: x.c }));
-    }
-
-    // Charts init
-    const cUSD = mkChart("chart_usd");
-    const sUSD = cUSD.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444", borderVisible:false, wickUpColor:"#22c55e", wickDownColor:"#ef4444" });
-
-    const cDXY = mkChart("chart_dxy");
-    const sDXY = cDXY.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444", borderVisible:false, wickUpColor:"#22c55e", wickDownColor:"#ef4444" });
-
-    const cKR = mkChart("chart_kr10y");
-    const sKR = cKR.addCandlestickSeries({ upColor:"#22c55e", downColor:"#ef4444", borderVisible:false, wickUpColor:"#22c55e", wickDownColor:"#ef4444" });
-
-    const cSP = mkChart("chart_spread");
-    const sSP = cSP.addLineSeries({ color:"rgba(147,197,253,.95)", lineWidth:2 });
-
-    const cRSV = mkChart("chart_reserves");
-    const sRSV = cRSV.addHistogramSeries({ color:"rgba(59,130,246,.55)" });
-    const sRSVLine = cRSV.addLineSeries({ color:"rgba(34,197,94,.85)", lineWidth:2 });
-
-    async function loadCharts() {
-      // 데이터는 “쌓여야” 캔들이 생깁니다. 처음 실행 직후엔 몇 분 비어있을 수 있어요.
-      const usd = await fetchCandles("USDKRW", "30m", "7d");
-      sUSD.setData(toLCandles(usd)); cUSD.timeScale().fitContent();
-
-      const dxy = await fetchCandles("DXY", "30m", "7d");
-      sDXY.setData(toLCandles(dxy)); cDXY.timeScale().fitContent();
-
-      const kr = await fetchCandles("KR10Y", "30m", "7d");
-      sKR.setData(toLCandles(kr)); cKR.timeScale().fitContent();
-
-      const sp = await fetchCandles("SPREAD10Y", "30m", "30d");
-      sSP.setData(toLLine(sp)); cSP.timeScale().fitContent();
+    // Try analysis (optional)
+    let analysis = null;
+    try{
+      analysis = await fetchJSON('/api/analysis?symbol=USDKRW');
+    }catch(e){
+      // ignore (endpoint may not exist yet)
     }
 
-    async function loadReserves() {
-      const r = await fetch("/api/reserves", { cache:"no-store" });
-      const j = await r.json();
-      // month -> time(초) 변환: 해당 월 1일
-      const pts = j.series.map(x => {
-        const [y,m] = x.month.split("-").map(Number);
-        const d = new Date(Date.UTC(y, m-1, 1));
-        return { time: Math.floor(d.getTime()/1000), value: x.value };
-      });
-      sRSV.setData(pts);
-      sRSVLine.setData(pts);
-      cRSV.timeScale().fitContent();
+    // If neither exists, fallback summary
+    if(!market && !analysis){
+      await loadReportFallback(state);
+      return;
     }
 
-    function setBrief(latest) {
-      const ul = $("briefList");
-      ul.innerHTML = "";
+    const html = [];
+    html.push(`<div><b>오늘의 리포트</b> <span class="pill">${analysis ? 'LLM' : 'no-LLM'}</span></div>`);
+    html.push(`<div class="muted" style="margin-top:6px">KPI는 /api/latest, 뉴스는 /api/market/today, 분석은 /api/analysis에서 가져옵니다.</div>`);
 
-      const items = [];
-      if (typeof latest.usdkrw === "number") items.push(`USD/KRW: ${latest.usdkrw.toFixed(2)} (실시간)`);
-      if (typeof latest.dxy === "number") items.push(`DXY: ${latest.dxy.toFixed(2)} (실시간, 실패 시 확인 필요)`);
-      if (typeof latest.spread10y === "number") items.push(`스프레드(US−KR 10Y): ${latest.spread10y.toFixed(3)}%p`);
-      items.push(`운영: 수집 실패는 숨기지 않고 WARN으로 표시`);
-
-      for (const t of items) {
-        const li = document.createElement("li");
-        li.textContent = t;
-        ul.appendChild(li);
+    // AI analysis block
+    if(analysis){
+      // 예상 포맷이 제각각일 수 있으니 방어적으로 처리
+      const text =
+        analysis.text || analysis.summary || analysis.result || analysis.message || analysis.analysis || '';
+      if(text){
+        html.push(`<div class="hr"></div>`);
+        html.push(`<div class="panelText" style="white-space:pre-wrap">${escapeHtml(String(text))}</div>`);
       }
     }
 
-    async function tick(){
-      try{
-        const r = await fetch("/api/latest", { cache:"no-store" });
-        const j = await r.json();
-
-        $("asof").textContent = j.asofKST || "-";
-        setStatus(j.status || "WARN");
-
-        $("usdkrw").textContent = fmt(j.usdkrw, 2);
-        $("eurkrw").textContent = fmt(j.eurkrw, 2);
-        $("dxy").textContent = fmt(j.dxy, 2);
-        $("kr10y").textContent = (j.kr10y==null? "-" : fmt(j.kr10y, 3) + "%");
-        $("us10y").textContent = (j.us10y==null? "-" : fmt(j.us10y, 3) + "%");
-        $("spread").textContent = (j.spread10y==null? "-" : fmt(j.spread10y, 3) + "%p");
-
-        let c;
-        c = chg(j.usdkrw, prev.usdkrw, 2); $("usdchg").textContent=c.text; $("usdchg").className="chg " + c.cls;
-        c = chg(j.eurkrw, prev.eurkrw, 2); $("eurchg").textContent=c.text; $("eurchg").className="chg " + c.cls;
-        c = chg(j.dxy, prev.dxy, 2); $("dxychg").textContent=c.text; $("dxychg").className="chg " + c.cls;
-        c = chg(j.kr10y, prev.kr10y, 3); $("krchg").textContent=c.text; $("krchg").className="chg " + c.cls;
-        c = chg(j.us10y, prev.us10y, 3); $("uschg").textContent=c.text; $("uschg").className="chg " + c.cls;
-        c = chg(j.spread10y, prev.spread10y, 3); $("spchg").textContent=c.text; $("spchg").className="chg " + c.cls;
-
-        if (typeof j.usdkrw==="number") prev.usdkrw=j.usdkrw;
-        if (typeof j.eurkrw==="number") prev.eurkrw=j.eurkrw;
-        if (typeof j.dxy==="number") prev.dxy=j.dxy;
-        if (typeof j.kr10y==="number") prev.kr10y=j.kr10y;
-        if (typeof j.us10y==="number") prev.us10y=j.us10y;
-        if (typeof j.spread10y==="number") prev.spread10y=j.spread10y;
-
-        $("errors").textContent = (j.errors && j.errors.length)
-          ? ("최근 수집 경고: " + j.errors.join(" | "))
-          : "";
-
-        setBrief(j);
-      }catch(e){
-        setStatus("FAIL");
-        $("errors").textContent = "API 연결 실패: " + (e.message || e);
+    // Market block (news/headlines)
+    if(market){
+      const headlines = market.headlines || market.news || market.mainnews || market.items || [];
+      if(Array.isArray(headlines) && headlines.length){
+        html.push(`<div class="hr"></div>`);
+        html.push(`<div><b>주요 뉴스</b> <span class="pill">NAVER</span></div>`);
+        html.push(`<ul>`);
+        for(const it of headlines.slice(0, 6)){
+          if(typeof it === 'string'){
+            html.push(`<li>${escapeHtml(it)}</li>`);
+          }else{
+            const title = it.title || it.text || it.headline || '(no title)';
+            const url = it.url || it.link || '';
+            if(url) html.push(`<li><a href="${url}" target="_blank" rel="noopener">${escapeHtml(title)}</a></li>`);
+            else html.push(`<li>${escapeHtml(title)}</li>`);
+          }
+        }
+        html.push(`</ul>`);
+      }else{
+        // if market is present but unknown shape, show small hint
+        html.push(`<div class="hr"></div>`);
+        html.push(`<div class="muted">market/today 응답은 있으나 headlines 구조를 인식하지 못했습니다.</div>`);
       }
     }
 
-    async function fullReload() {
-      await tick();
-      await loadCharts();
-      await loadReserves();
-    }
+    // Always include KPI snapshot
+    html.push(`<div class="hr"></div>`);
+    html.push(`<div><b>KPI 스냅샷</b> <span class="pill">${escapeHtml(state.asofKST || '-')}</span></div>`);
+    html.push(`<ul>`);
+    html.push(`<li>USD/KRW: <span class="mono">${fmtInt(state.usdkrw)}</span></li>`);
+    html.push(`<li>EUR/KRW: <span class="mono">${fmtInt(state.eurkrw)}</span></li>`);
+    html.push(`<li>DXY: <span class="mono">${fmt(state.dxy,2)}</span></li>`);
+    html.push(`<li>10Y Spread: <span class="mono">${fmt(state.spread10y,3)} pp</span></li>`);
+    html.push(`</ul>`);
 
-    $("refreshBtn").addEventListener("click", fullReload);
+    el.innerHTML = html.join('');
+  }
 
-    // 첫 로드
-    fullReload();
+  function escapeHtml(s){
+    return s
+      .replaceAll('&','&amp;')
+      .replaceAll('<','&lt;')
+      .replaceAll('>','&gt;')
+      .replaceAll('"','&quot;')
+      .replaceAll("'","&#039;");
+  }
 
-    // 10초마다 KPI는 계속 갱신
-    setInterval(tick, 10_000);
+  // ----------------------------
+  // Scheduling / boot
+  // ----------------------------
+  async function fullReload(){
+    // 순서: KPI → 차트 → reserves → 리포트
+    try{ await loadLatest(); } catch(e){}
+    try{ await loadCharts(); } catch(e){}
+    try{ await loadReserves(); } catch(e){}
+    try{ await loadReport(); } catch(e){}
+    resizeCharts();
+  }
 
-    // 차트는 1분마다 새로 그림(너무 자주 그릴 필요 없음)
-    setInterval(loadCharts, 60_000);
-  </script>
+  // Initial load
+  fullReload();
+
+  // KPI: every 10s
+  setInterval(() => loadLatest().catch(()=>{}), 10_000);
+
+  // Charts: every 60s (USD 1m chart + others)
+  setInterval(() => loadCharts().catch(()=>{}), 60_000);
+
+  // Reserves: every 10min (monthly; not necessary to be frequent)
+  setInterval(() => loadReserves().catch(()=>{}), 600_000);
+
+  // Report: every 60s
+  setInterval(() => loadReport().catch(()=>{}), 60_000);
+</script>
 </body>
 </html>
