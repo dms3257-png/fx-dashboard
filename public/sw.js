@@ -1,7 +1,6 @@
 const CACHE_NAME = "fxdash-v1";
 
 // 앱 쉘(오프라인에서도 최소 UI가 뜨게)
-const CACHE_NAME = "fxdash-v1";
 const APP_SHELL = ["/", "/index.html", "/manifest.webmanifest"];
 
 self.addEventListener("install", (event) => {
@@ -41,3 +40,4 @@ self.addEventListener("fetch", (event) => {
   // 정적은 cache-first
   event.respondWith(caches.match(req).then((cached) => cached || fetch(req)));
 });
+
