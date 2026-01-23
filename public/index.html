@@ -285,8 +285,8 @@
           <div class="card" style="background:transparent;border:none">
             <div class="cardHeader" style="border-radius:12px">
               <div class="title">
-  외화보유액 <span class="pill">Line Auto-scale</span>
-</div>
+                DXY <span class="pill">line</span>
+              </div>
               <div class="meta"><a href="/api/candles?symbol=DXY&interval=30m&range=7d" target="_blank" rel="noopener">candles</a></div>
             </div>
             <div class="cardBody" style="padding:10px 0 0">
@@ -334,7 +334,7 @@
 
         <div class="cardHeader" style="border-radius:12px; margin-bottom:10px;">
           <div class="title">
-            () <span class="pill">Line  Auto-scale</span>
+            외화보유액 <span class="pill">Line Auto-scale</span>
           </div>
           <div class="meta">
             <a href="/api/reserves" target="_blank" rel="noopener">/api/reserves</a>
@@ -529,11 +529,11 @@
 
     if(state.status === 'WARN'){
       warnEl.style.display = 'block';
-      warnEl.textContent = `WARN:      (: DXY). errors=${errs.length}`;
+      warnEl.textContent = `WARN: DXY errors=${errs.length}`;
     }
     if(state.status && state.status !== 'OK' && state.status !== 'WARN'){
       errEl.style.display = 'block';
-      errEl.textContent = `ERROR:  . errors=${errs.length}`;
+      errEl.textContent = `ERROR: errors=${errs.length}`;
     }
 
     return state;
@@ -557,7 +557,6 @@
   }
 
   async function loadReserves(){
-    // Monthly reserves (line + auto-scale via fitContent)
     const j = await fetchJSON('/api/reserves');
     const pts = toLLineMonthly(j.series || []);
     sRSVLine.setData(pts);
@@ -565,7 +564,6 @@
   }
 
   async function loadReportFallback(state){
-    // fallback text: use /api/latest only
     const el = document.getElementById('panel_report');
     const lines = [];
     lines.push(`<div><b>Action Brief</b> <span class="pill">fallback</span></div>`);
@@ -580,35 +578,22 @@
   }
 
   async function loadReport(){
-    // Try /api/market/today + /api/analysis; if not present, fallback.
     const el = document.getElementById('panel_report');
 
     let state = null;
     try{
       state = await loadLatest();
     }catch(e){
-      // if /api/latest fails, show raw error
       el.innerHTML = `<div class="muted">/api/latest failed: ${String(e.message || e)}</div>`;
       return;
     }
 
-    // Try market today (optional)
     let market = null;
-    try{
-      market = await fetchJSON('/api/market/today');
-    }catch(e){
-      // ignore (endpoint may not exist yet)
-    }
+    try{ market = await fetchJSON('/api/market/today'); }catch(e){}
 
-    // Try analysis (optional)
     let analysis = null;
-    try{
-      analysis = await fetchJSON('/api/analysis?symbol=USDKRW');
-    }catch(e){
-      // ignore (endpoint may not exist yet)
-    }
+    try{ analysis = await fetchJSON('/api/analysis?symbol=USDKRW'); }catch(e){}
 
-    // If neither exists, fallback summary
     if(!market && !analysis){
       await loadReportFallback(state);
       return;
@@ -618,17 +603,14 @@
     html.push(`<div><b>Market Brief</b> <span class="pill">${analysis ? 'LLM' : 'no-LLM'}</span></div>`);
     html.push(`<div class="muted" style="margin-top:6px">KPI from /api/latest, news from /api/market/today, AI from /api/analysis.</div>`);
 
-    // AI analysis block
     if(analysis){
-      const text =
-        analysis.text || analysis.summary || analysis.result || analysis.message || analysis.analysis || '';
+      const text = analysis.text || analysis.summary || analysis.result || analysis.message || analysis.analysis || '';
       if(text){
         html.push(`<div class="hr"></div>`);
         html.push(`<div class="panelText" style="white-space:pre-wrap">${escapeHtml(String(text))}</div>`);
       }
     }
 
-    // Market block (news/headlines)
     if(market){
       const headlines = market.headlines || market.news || market.mainnews || market.items || [];
       if(Array.isArray(headlines) && headlines.length){
@@ -652,7 +634,6 @@
       }
     }
 
-    // Always include KPI snapshot
     html.push(`<div class="hr"></div>`);
     html.push(`<div><b>KPI Snapshot</b> <span class="pill">${escapeHtml(state.asofKST || '-')}</span></div>`);
     html.push(`<ul>`);
@@ -674,9 +655,6 @@
       .replaceAll("'","&#039;");
   }
 
-  // ----------------------------
-  // Scheduling / boot
-  // ----------------------------
   async function fullReload(){
     try{ await loadLatest(); } catch(e){}
     try{ await loadCharts(); } catch(e){}
@@ -685,19 +663,11 @@
     resizeCharts();
   }
 
-  // Initial load
   fullReload();
 
-  // KPI: every 10s
   setInterval(() => loadLatest().catch(()=>{}), 10_000);
-
-  // Charts: every 60s (USD 1m chart + others)
   setInterval(() => loadCharts().catch(()=>{}), 60_000);
-
-  // Reserves: every 10min (monthly; not necessary to be frequent)
   setInterval(() => loadReserves().catch(()=>{}), 600_000);
-
-  // Report: every 2 hours
   setInterval(() => loadReport().catch(()=>{}), 2 * 60 * 60 * 1000);
 </script>
 
@@ -712,4 +682,6 @@
 
 </body>
 </html>
+
+
 
