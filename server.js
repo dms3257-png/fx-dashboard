@@ -1,4 +1,4 @@
-// server.js (완성본: tick 저장 + OHLC 캔들 API + reserves JSON 제공 + market/today + analysis)
+// server.js (완성본: tick 저장 + OHLC 캔들 API + reserves JSON 제공 + market/today + analysis + foreign-flows)
 // 실행: node ./server.js
 
 const express = require("express");
@@ -311,11 +311,41 @@ app.get("/api/reserves", (req, res) => {
   }
 });
 
+/** ✅ /api/foreign-flows (외국인 외환 매매 동향) */
+app.get("/api/foreign-flows", (req, res) => {
+  // Mock 데이터 (테스트용)
+  // 실제 데이터 연동 시 한국은행 API 또는 금융감독원 데이터로 교체
+  
+  const mockData = {
+    today: {
+      netBuy: 1250000000,    // 오늘 순매수: 12.5억 달러
+      netSell: -890000000    // 오늘 순매도: -8.9억 달러
+    },
+    last7d: {
+      netBuy: 8500000000,    // 최근 7일 순매수: 85억 달러
+      netSell: -6200000000   // 최근 7일 순매도: -62억 달러
+    },
+    series: [
+      { time: 1737331200, net: 450000000 },   // 7일 전
+      { time: 1737417600, net: 320000000 },   // 6일 전
+      { time: 1737504000, net: -180000000 },  // 5일 전
+      { time: 1737590400, net: 620000000 },   // 4일 전
+      { time: 1737676800, net: 410000000 },   // 3일 전
+      { time: 1737763200, net: 280000000 },   // 2일 전
+      { time: 1737849600, net: 360000000 }    // 1일 전 (오늘)
+    ],
+    asofKST: kstNowString(),
+    source: "Mock Data (테스트용)",
+    note: "실제 데이터 연동 필요"
+  };
+  
+  res.json(mockData);
+});
+
 /** ✅ /api/market/today */
 app.get("/api/market/today", async (req, res) => {
   try {
     const url = "https://finance.naver.com/news/mainnews.naver";
-    // preferredEncoding을 굳이 고정하지 않고(자동판별+비교) 안정적으로 처리
     const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
     const $ = cheerio.load(html);
 
@@ -415,7 +445,6 @@ app.get("/api/analysis", async (req, res) => {
       };
     }
 
-    // 오늘의 증시 주요뉴스(자동 인코딩 처리)
     const market = await (async () => {
       const url = "https://finance.naver.com/news/mainnews.naver";
       const html = await fetchText(url, { "Referer": "https://finance.naver.com/" });
@@ -544,14 +573,3 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
-
-
-
-
-
-
-
-
-
-
-
