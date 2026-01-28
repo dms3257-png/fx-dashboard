@@ -311,42 +311,7 @@ app.get("/api/reserves", (req, res) => {
   }
 });
 
-/** ✅ /api/foreign-flows (외국인 외환 매매 동향) */
-app.get("/api/foreign-flows", (req, res) => {
-  // Mock 데이터 (테스트용)
-  // 실제 데이터 연동 시 한국은행 API 또는 금융감독원 데이터로 교체
-  
-  const now = Date.now();
-  const oneDayMs = 24 * 60 * 60 * 1000;
-  
-  // 최근 7일간 데이터 생성 (UNIX timestamp)
-  const series = [];
-  for (let i = 6; i >= 0; i--) {
-    const time = Math.floor((now - i * oneDayMs) / 1000);
-    const net = Math.floor((Math.random() - 0.5) * 1000000000); // -500M ~ +500M
-    series.push({ time, net });
-  }
-  
-  const todayNet = series[series.length - 1].net;
-  const last7dTotal = series.reduce((sum, item) => sum + item.net, 0);
-  
-  const mockData = {
-    today: {
-      netBuy: todayNet > 0 ? todayNet : 0,
-      netSell: todayNet < 0 ? todayNet : 0
-    },
-    last7d: {
-      netBuy: last7dTotal > 0 ? last7dTotal : 0,
-      netSell: last7dTotal < 0 ? last7dTotal : 0
-    },
-    series: series,
-    asofKST: kstNowString(),
-    source: "Mock Data (테스트용)",
-    note: "실제 데이터 연동 필요"
-  };
-  
-  res.json(mockData);
-});
+031-286-4001
 
 /** ✅ /api/market/today */
 app.get("/api/market/today", async (req, res) => {
@@ -579,4 +544,5 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
