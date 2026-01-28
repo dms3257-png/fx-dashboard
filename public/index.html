@@ -213,6 +213,25 @@
       text-align:center;
     }
     .foot code{font-family:var(--mono);font-size:12px}
+
+    /* ✅ AI 분석 버튼 스타일 */
+    .aiBtn{
+      padding:5px 12px;
+      border-radius:8px;
+      border:1px solid rgba(150,163,199,.3);
+      background:rgba(24,36,90,.55);
+      color:#d2e0ff;
+      font-size:11px;
+      cursor:pointer;
+      transition: all 0.2s;
+    }
+    .aiBtn:hover{
+      background:rgba(24,36,90,.75);
+      border-color:rgba(150,163,199,.5);
+    }
+    .aiBtn:active{
+      transform: scale(0.98);
+    }
   </style>
 </head>
 
@@ -316,6 +335,9 @@
       <div class="cardHeader">
         <div class="title">
           시황 (AI) <span class="pill">/api/analysis</span>
+          <button onclick="loadReport()" class="aiBtn">
+            🤖 AI 분석 요청
+          </button>
         </div>
         <div class="meta">
           <a href="/api/market/today" target="_blank" rel="noopener">market</a>
@@ -325,7 +347,7 @@
       <div class="cardBody">
 
         <div class="panelText" id="panel_report">
-          <div class="muted">로딩 중... (데이터: /api/latest 등)</div>
+          <div class="muted">💡 AI 분석을 보려면 위의 "🤖 AI 분석 요청" 버튼을 클릭하세요.</div>
         </div>
 
         <div id="panel_warn" class="warnBox" style="display:none;"></div>
@@ -376,7 +398,7 @@
       <div class="hr"></div>
       <div id="chart_foreign" class="chart small"></div>
       <div class="panelText muted" style="margin-top:8px">
-        양수: 순매수 · 음수: 순매도 · 출처: 예상 API (/api/foreign-flows)
+        양수: 순매수 · 음수: 순매도 · 출처: Mock API (/api/foreign-flows)
       </div>
     </div>
   </div>
@@ -425,13 +447,12 @@
     });
   }
 
-  function toLLineDaily(series){
-    // expects: [{date:"YYYY-MM-DD", value:Number}]
-    return (series || []).map(p => {
-      const [y,m,d] = p.date.split('-').map(Number);
-      const dt = new Date(Date.UTC(y, (m||1)-1, d||1, 0, 0, 0));
-      return { time: Math.floor(dt.getTime()/1000), value: Number(p.value) };
-    });
+  function toLLineTimestamped(series){
+    // expects: [{time: unix_timestamp, net: Number}]
+    return (series || []).map(p => ({
+      time: p.time,
+      value: Number(p.net)
+    }));
   }
 
   function setStatusChip(status){
@@ -612,11 +633,21 @@
   async function loadForeignFlows(){
     try{
       const j = await fetchJSON('/api/foreign-flows');
-      // 예상 구조: { today: Number, last7d: Number, series: [{date:"YYYY-MM-DD", value:Number}] }
-      document.getElementById('k_foreign_today').textContent = fmtInt(j.today);
-      document.getElementById('k_foreign_7d').textContent = fmtInt(j.last7d);
       
-      const pts = toLLineDaily(j.series || []);
+      // KPI 업데이트
+      const todayBuy = j.today?.netBuy || 0;
+      const todaySell = j.today?.netSell || 0;
+      const todayNet = todayBuy + todaySell;
+      
+      const last7dBuy = j.last7d?.netBuy || 0;
+      const last7dSell = j.last7d?.netSell || 0;
+      const last7dNet = last7dBuy + last7dSell;
+      
+      document.getElementById('k_foreign_today').textContent = fmtInt(todayNet / 1000000);
+      document.getElementById('k_foreign_7d').textContent = fmtInt(last7dNet / 1000000);
+      
+      // 차트 업데이트
+      const pts = toLLineTimestamped(j.series || []);
       sForeignLine.setData(pts);
       cForeign.timeScale().fitContent();
     }catch(e){
@@ -642,6 +673,7 @@
 
   async function loadReport(){
     const el = document.getElementById('panel_report');
+    el.innerHTML = '<div class="muted">🔄 AI 분석 로딩 중...</div>';
 
     let state = null;
     try{
@@ -655,7 +687,9 @@
     try{ market = await fetchJSON('/api/market/today'); }catch(e){}
 
     let analysis = null;
-    try{ analysis = await fetchJSON('/api/analysis?symbol=USDKRW'); }catch(e){}
+    try{ analysis = await fetchJSON('/api/analysis?symbol=USDKRW'); }catch(e){
+      console.warn('AI analysis failed:', e);
+    }
 
     if(!market && !analysis){
       await loadReportFallback(state);
@@ -663,13 +697,20 @@
     }
 
     const html = [];
-    html.push(`<div><b>Market Brief</b> <span class="pill">${analysis ? 'LLM' : 'no-LLM'}</span></div>`);
+    html.push(`<div><b>Market Brief</b> <span class="pill">${analysis ? 'AI' : 'no-AI'}</span></div>`);
     html.push(`<div class="muted" style="margin-top:6px">KPI from /api/latest, news from /api/market/today, AI from /api/analysis.</div>`);
 
     if(analysis){
       const text = analysis.text || analysis.summary || analysis.result || analysis.message || analysis.analysis || '';
+      const isCached = analysis.cached === true;
+      const cacheSec = analysis.cacheAgeSec || 0;
+      const isRateLimited = analysis.degraded === true;
+      
       if(text){
         html.push(`<div class="hr"></div>`);
+        if(isCached){
+          html.push(`<div class="warnBox">⚠️ 캐시된 분석 (${Math.floor(cacheSec/60)}분 전)${isRateLimited ? ' | Rate limit 보호 활성화' : ''}</div>`);
+        }
         html.push(`<div class="panelText" style="white-space:pre-wrap">${escapeHtml(String(text))}</div>`);
       }
     }
@@ -691,9 +732,6 @@
           }
         }
         html.push(`</ul>`);
-      }else{
-        html.push(`<div class="hr"></div>`);
-        html.push(`<div class="muted">market/today is present but no headlines.</div>`);
       }
     }
 
@@ -723,7 +761,8 @@
     try{ await loadCharts(); } catch(e){}
     try{ await loadReserves(); } catch(e){}
     try{ await loadForeignFlows(); } catch(e){}
-    try{ await loadReport(); } catch(e){}
+    // ✅ AI 분석은 수동 버튼으로만 호출 (자동 로드 제거)
+    // try{ await loadReport(); } catch(e){}
     resizeCharts();
   }
 
@@ -733,7 +772,8 @@
   setInterval(() => loadCharts().catch(()=>{}), 60_000);
   setInterval(() => loadReserves().catch(()=>{}), 600_000);
   setInterval(() => loadForeignFlows().catch(()=>{}), 600_000);
-  setInterval(() => loadReport().catch(()=>{}), 2 * 60 * 60 * 1000);
+  // ✅ AI 분석 자동 갱신 제거 (수동 버튼으로만 호출)
+  // setInterval(() => loadReport().catch(()=>{}), 2 * 60 * 60 * 1000);
 </script>
 
 <!-- ✅ PWA (minimal) : register service worker -->
