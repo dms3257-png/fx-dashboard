@@ -68,12 +68,12 @@ const state = {
   errors: []
 };
 
-/** ---------- /api/analysis 캐시(2시간) ---------- */
-const ANALYSIS_TTL_MS = 2 * 60 * 60 * 1000;
+/** ---------- /api/analysis 캐시(12시간) ---------- */
+const ANALYSIS_TTL_MS = 12 * 60 * 60 * 1000;  // 2시간 → 12시간
 const analysisCache = new Map();
 
-/** ---------- /api/analysis 쿨다운(429 보호) ---------- */
-const ANALYSIS_COOLDOWN_MS = 60 * 1000;
+/** ---------- /api/analysis 쿨다운(5분) ---------- */
+const ANALYSIS_COOLDOWN_MS = 5 * 60 * 1000;   // 60초 → 5분
 let analysisCooldownUntil = 0;
 
 /** ---------- 인코딩 유틸 ---------- */
@@ -316,24 +316,30 @@ app.get("/api/foreign-flows", (req, res) => {
   // Mock 데이터 (테스트용)
   // 실제 데이터 연동 시 한국은행 API 또는 금융감독원 데이터로 교체
   
+  const now = Date.now();
+  const oneDayMs = 24 * 60 * 60 * 1000;
+  
+  // 최근 7일간 데이터 생성 (UNIX timestamp)
+  const series = [];
+  for (let i = 6; i >= 0; i--) {
+    const time = Math.floor((now - i * oneDayMs) / 1000);
+    const net = Math.floor((Math.random() - 0.5) * 1000000000); // -500M ~ +500M
+    series.push({ time, net });
+  }
+  
+  const todayNet = series[series.length - 1].net;
+  const last7dTotal = series.reduce((sum, item) => sum + item.net, 0);
+  
   const mockData = {
     today: {
-      netBuy: 1250000000,    // 오늘 순매수: 12.5억 달러
-      netSell: -890000000    // 오늘 순매도: -8.9억 달러
+      netBuy: todayNet > 0 ? todayNet : 0,
+      netSell: todayNet < 0 ? todayNet : 0
     },
     last7d: {
-      netBuy: 8500000000,    // 최근 7일 순매수: 85억 달러
-      netSell: -6200000000   // 최근 7일 순매도: -62억 달러
+      netBuy: last7dTotal > 0 ? last7dTotal : 0,
+      netSell: last7dTotal < 0 ? last7dTotal : 0
     },
-    series: [
-      { time: 1737331200, net: 450000000 },   // 7일 전
-      { time: 1737417600, net: 320000000 },   // 6일 전
-      { time: 1737504000, net: -180000000 },  // 5일 전
-      { time: 1737590400, net: 620000000 },   // 4일 전
-      { time: 1737676800, net: 410000000 },   // 3일 전
-      { time: 1737763200, net: 280000000 },   // 2일 전
-      { time: 1737849600, net: 360000000 }    // 1일 전 (오늘)
-    ],
+    series: series,
     asofKST: kstNowString(),
     source: "Mock Data (테스트용)",
     note: "실제 데이터 연동 필요"
@@ -507,7 +513,7 @@ ${market.headlines.map((h,i)=>`${i+1}. ${h.title}`).join("\n")}
     const client = new OpenAI({ apiKey });
 
     const completion = await client.chat.completions.create({
-      model: "gpt-4.1-mini",
+      model: "gpt-4o-mini",
       messages: [
         { role: "system", content: "너는 금융 데이터 요약에 강한 한국어 애널리스트다." },
         { role: "user", content: prompt }
@@ -573,3 +579,4 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
