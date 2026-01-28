@@ -311,7 +311,107 @@ app.get("/api/reserves", (req, res) => {
   }
 });
 
-031-286-4001
+/** ✅ /api/foreign-flows (네이버 금융 크롤링) */
+app.get("/api/foreign-flows", async (req, res) => {
+  try {
+    // 최근 30일 데이터 수집
+    const today = new Date();
+    const bizdate = today.toISOString().split('T')[0].replace(/-/g, '');
+    
+    const url = `https://finance.naver.com/sise/investorDealTrendDay.naver?bizdate=${bizdate}&sosok=&page=1`;
+    
+    const html = await fetchText(url);
+    const $ = cheerio.load(html);
+    
+    const series = [];
+    let todayNet = 0;
+    let last7dNet = 0;
+    
+    // 테이블 파싱
+    $('table.type_1 tr').each((idx, row) => {
+      const cells = $(row).find('td');
+      if (cells.length < 3) return;
+      
+      // 날짜 (첫 번째 셀)
+      const dateText = $(cells[0]).text().trim();
+      if (!dateText || dateText === '' || dateText.includes('날짜')) return;
+      
+      // 외국인 순매수 (세 번째 셀)
+      const foreignText = $(cells[2]).text().trim();
+      const foreignValue = parseFloat(foreignText.replace(/,/g, '')) * 100000000; // 억원 → 원
+      
+      if (isNaN(foreignValue)) return;
+      
+      // 날짜 파싱 (YYYY.MM.DD 형식)
+      const [year, month, day] = dateText.split('.').map(d => parseInt(d.trim()));
+      if (!year || !month || !day) return;
+      
+      const dt = new Date(year, month - 1, day, 0, 0, 0);
+      const time = Math.floor(dt.getTime() / 1000);
+      
+      series.push({ time, net: foreignValue });
+      
+      // 오늘 데이터 (첫 번째 행)
+      if (idx === 1) {
+        todayNet = foreignValue;
+      }
+      
+      // 최근 7일 합계
+      if (idx <= 7) {
+        last7dNet += foreignValue;
+      }
+    });
+    
+    // 시계열 데이터 정렬 (오래된 순)
+    series.sort((a, b) => a.time - b.time);
+    
+    res.json({
+      today: {
+        netBuy: todayNet > 0 ? todayNet : 0,
+        netSell: todayNet < 0 ? todayNet : 0
+      },
+      last7d: {
+        netBuy: last7dNet > 0 ? last7dNet : 0,
+        netSell: last7dNet < 0 ? last7dNet : 0
+      },
+      series: series.slice(-30), // 최근 30일
+      asofKST: kstNowString(),
+      source: "네이버 금융 (외국인 주식 매매)",
+      note: "단위: 원 (네이버는 억원 단위)"
+    });
+    
+  } catch (e) {
+    console.error('Foreign flows crawl error:', e);
+    
+    // 크롤링 실패 시 Mock 데이터 반환
+    const now = Date.now();
+    const oneDayMs = 24 * 60 * 60 * 1000;
+    const series = [];
+    for (let i = 6; i >= 0; i--) {
+      const time = Math.floor((now - i * oneDayMs) / 1000);
+      const net = Math.floor((Math.random() - 0.5) * 1000000000);
+      series.push({ time, net });
+    }
+    const todayNet = series[series.length - 1].net;
+    const last7dTotal = series.reduce((sum, item) => sum + item.net, 0);
+    
+    res.json({
+      today: {
+        netBuy: todayNet > 0 ? todayNet : 0,
+        netSell: todayNet < 0 ? todayNet : 0
+      },
+      last7d: {
+        netBuy: last7dTotal > 0 ? last7dTotal : 0,
+        netSell: last7dTotal < 0 ? last7dTotal : 0
+      },
+      series: series,
+      asofKST: kstNowString(),
+      source: "Mock Data (크롤링 실패)",
+      error: String(e.message || e)
+    });
+  }
+});
+
 
 /** ✅ /api/market/today */
 app.get("/api/market/today", async (req, res) => {
@@ -544,5 +644,6 @@ const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
   console.log(`✅ Server running on http://localhost:${PORT}`);
 });
+
 
 
