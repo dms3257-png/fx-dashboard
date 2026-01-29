@@ -1,8 +1,8 @@
 // ─────────────────────────────────────────────────────────────────────────────
-// FX Dashboard Server
+// FX Dashboard Server (Original Working Version)
 // ─────────────────────────────────────────────────────────────────────────────
 // 기능:
-//  - SQLite로 tick 저장 (USDKRW, EURKRW, DXY, KR10Y, US10Y)
+//  - SQLite로 tick 저장 (USDKRW, DXY, KR10Y, US10Y)
 //  - OHLC 캔들 API 제공
 //  - 외화보유액 JSON 제공
 //  - 오늘의 시장 뉴스 헤드라인 크롤링
@@ -148,39 +148,12 @@ async function crawlInvestingDXY() {
     const url = "https://www.investing.com/indices/usdollar";
     const text = await fetchText(url);
     const $ = cheerio.load(text);
-    
-    // 여러 셀렉터 시도
-    let dxyText = $("[data-test='instrument-price-last']").first().text().trim();
-    
-    if (!dxyText) {
-      // 대체 셀렉터 1: 큰 숫자 찾기
-      dxyText = $(".text-5xl").first().text().trim();
-    }
-    
-    if (!dxyText) {
-      // 대체 셀렉터 2: instrument-price 클래스
-      dxyText = $(".instrument-price_last__KQzyA").first().text().trim();
-    }
-    
-    if (!dxyText) {
-      // 대체 셀렉터 3: 첫 번째 큰 가격 숫자
-      $("*").each((i, el) => {
-        const text = $(el).text().trim();
-        if (/^\d{2,3}\.\d{2}$/.test(text)) {
-          dxyText = text;
-          return false;
-        }
-      });
-    }
-    
-    const dxy = parseFloat(dxyText.replace(/,/g, ""));
-    
-    if (!isNaN(dxy) && dxy > 50 && dxy < 150) {
+    const dxyText = $("[data-test='instrument-price-last']").first().text().trim().replace(/,/g, "");
+    const dxy = parseFloat(dxyText);
+    if (!isNaN(dxy)) {
       state.DXY = dxy;
-      console.log("✅ DXY:", dxy);
       return dxy;
     }
-    
     throw new Error("DXY 파싱 실패");
   } catch (err) {
     console.error("❌ crawlInvestingDXY error:", err.message);
