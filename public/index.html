@@ -493,11 +493,15 @@
       try {
         const res = await fetch('/api/reserves');
         const data = await res.json();
-        const chartData = data.map(d => ({
-          time: Math.floor(new Date(d.date).getTime() / 1000),
-          value: d.reserves
-        }));
-        series.reserves.setData(chartData);
+        
+        // reserves.json 형식: {series: [{month: "2025-08", value: 420.1}]}
+        if (data.series && Array.isArray(data.series)) {
+          const chartData = data.series.map(d => ({
+            time: d.month, // "YYYY-MM" 형식
+            value: d.value
+          }));
+          series.reserves.setData(chartData);
+        }
       } catch (err) {
         console.error('❌ loadReserves error:', err);
       }
@@ -516,7 +520,14 @@
         document.getElementById('kpi-foreign-7d').textContent = 
           (last7dNet / 1000000).toFixed(0) + 'M';
         
-        series.foreign.setData(data.series);
+        // 시계열 데이터 필터링 (유효한 시간만)
+        const validSeries = data.series.filter(item => {
+          return item.time && !isNaN(item.time) && item.time > 0;
+        });
+        
+        if (validSeries.length > 0) {
+          series.foreign.setData(validSeries);
+        }
       } catch (err) {
         console.error('❌ loadForeignFlows error:', err);
       }
