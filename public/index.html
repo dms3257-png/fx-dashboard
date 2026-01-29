@@ -7,9 +7,9 @@
 
   <!-- ✅ PWA (minimal) -->
   <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" href="/icons/icon-192.png">
-  <meta name="theme-color" content="#0b1020">
-  
+<link rel="icon" href="/icons/icon-192.png">
+<meta name="theme-color" content="#0b1020">
+
   <!-- Lightweight Charts 4.2.1 -->
   <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
 
@@ -223,7 +223,7 @@
     <div class="brand">
       <h1>FX Dashboard</h1>
       <div class="sub">
-        KPI 10 · 60초 · SQLite
+        KPI 10    60     SQLite
       </div>
     </div>
     <div class="statusRow">
@@ -238,7 +238,7 @@
     <div class="card">
       <div class="cardHeader">
         <div class="title">
-          USD/KRW <span class="pill">1m · 24h</span>
+          USD/KRW <span class="pill">1m  24h</span>
         </div>
         <div class="meta">
           <a href="/api/candles?symbol=USDKRW&interval=1m&range=24h" target="_blank" rel="noopener">candles</a>
@@ -278,7 +278,7 @@
           <div class="kpi">
             <div class="label">Spread (USKR 10Y)</div>
             <div class="value mono" id="k_spread10y">-</div>
-            <div class="sub muted">US10Y - KR10Y</div>
+            <div class="sub muted">US10Y  KR10Y</div>
           </div>
         </div>
 
@@ -286,9 +286,9 @@
           <div class="card" style="background:transparent;border:none">
             <div class="cardHeader" style="border-radius:12px">
               <div class="title">
-                DXY <span class="pill">line · 5m · 3d</span>
+                DXY <span class="pill">line</span>
               </div>
-              <div class="meta"><a href="/api/candles?symbol=DXY&interval=5m&range=3d" target="_blank" rel="noopener">candles</a></div>
+              <div class="meta"><a href="/api/candles?symbol=DXY&interval=30m&range=7d" target="_blank" rel="noopener">candles</a></div>
             </div>
             <div class="cardBody" style="padding:10px 0 0">
               <div id="chart_dxy" class="chart small"></div>
@@ -298,9 +298,9 @@
           <div class="card" style="background:transparent;border:none">
             <div class="cardHeader" style="border-radius:12px">
               <div class="title">
-                KR10Y <span class="pill">line · 5m · 7d</span>
+                KR10Y <span class="pill">line</span>
               </div>
-              <div class="meta"><a href="/api/candles?symbol=KR10Y&interval=5m&range=7d" target="_blank" rel="noopener">candles</a></div>
+              <div class="meta"><a href="/api/candles?symbol=KR10Y&interval=30m&range=30d" target="_blank" rel="noopener">candles</a></div>
             </div>
             <div class="cardBody" style="padding:10px 0 0">
               <div id="chart_kr10y" class="chart small"></div>
@@ -315,7 +315,7 @@
     <div class="card">
       <div class="cardHeader">
         <div class="title">
-          시황 (AI) <span class="pill">/api/analysis</span>
+           (AI) <span class="pill">/api/analysis</span>
         </div>
         <div class="meta">
           <a href="/api/market/today" target="_blank" rel="noopener">market</a>
@@ -325,7 +325,7 @@
       <div class="cardBody">
 
         <div class="panelText" id="panel_report">
-          <div class="muted">로딩 중... (데이터: /api/latest 등)</div>
+          <div class="muted">  (    /api/latest   )</div>
         </div>
 
         <div id="panel_warn" class="warnBox" style="display:none;"></div>
@@ -335,7 +335,7 @@
 
         <div class="cardHeader" style="border-radius:12px; margin-bottom:10px;">
           <div class="title">
-            외화보유액 <span class="pill">Line · Auto-scale</span>
+            외화보유액 <span class="pill">Line Auto-scale</span>
           </div>
           <div class="meta">
             <a href="/api/reserves" target="_blank" rel="noopener">/api/reserves</a>
@@ -343,46 +343,15 @@
         </div>
         <div id="chart_reserves" class="chart small"></div>
         <div class="panelText muted" style="margin-top:8px">
-          단위: USD bn · 출처: BOK press release (public/data/reserves.json)
+          : USD bn  : BOK press release (public/data/reserves.json)
         </div>
 
-      </div>
-    </div>
-  </div>
-
-  <!-- ✅ 외국인 매매 동향 (새 섹션) -->
-  <div class="card" style="margin-top:14px">
-    <div class="cardHeader">
-      <div class="title">
-        외국인 외환 매매 동향 <span class="pill">Line · Daily</span>
-      </div>
-      <div class="meta">
-        <a href="/api/foreign-flows" target="_blank" rel="noopener">/api/foreign-flows</a>
-      </div>
-    </div>
-    <div class="cardBody">
-      <div class="kpis" style="grid-template-columns: repeat(2, 1fr);">
-        <div class="kpi">
-          <div class="label">오늘 순매수</div>
-          <div class="value mono" id="k_foreign_today">-</div>
-          <div class="sub muted">단위: 백만 USD</div>
-        </div>
-        <div class="kpi">
-          <div class="label">최근 7일 누적</div>
-          <div class="value mono" id="k_foreign_7d">-</div>
-          <div class="sub muted">단위: 백만 USD</div>
-        </div>
-      </div>
-      <div class="hr"></div>
-      <div id="chart_foreign" class="chart small"></div>
-      <div class="panelText muted" style="margin-top:8px">
-        양수: 순매수 · 음수: 순매도 · 출처: 예상 API (/api/foreign-flows)
       </div>
     </div>
   </div>
 
   <div class="foot">
-    데이터: <code>/api/latest</code>, <code>/api/candles</code>, <code>/api/reserves</code>, <code>/api/foreign-flows</code>
+    : <code>/api/latest</code>, <code>/api/candles</code>, <code>/api/reserves</code>
   </div>
 </div>
 
@@ -407,6 +376,8 @@
   }
 
   function toLCandles(arr){
+    // expects: [{t,o,h,l,c}] where t is ms epoch
+    // lightweight-charts: {time: seconds}
     return (arr || []).map(x => ({
       time: Math.floor(x.t / 1000),
       open: x.o, high: x.h, low: x.l, close: x.c
@@ -414,22 +385,16 @@
   }
 
   function toLLineFromCandles(arr){
+    // line from close
     return (arr || []).map(x => ({ time: Math.floor(x.t / 1000), value: x.c }));
   }
 
   function toLLineMonthly(series){
+    // expects: [{month:"YYYY-MM", value:Number}]
+    // Use first day of month as UTC for time
     return (series || []).map(p => {
       const [y,m] = p.month.split('-').map(Number);
       const dt = new Date(Date.UTC(y, (m||1)-1, 1, 0, 0, 0));
-      return { time: Math.floor(dt.getTime()/1000), value: Number(p.value) };
-    });
-  }
-
-  function toLLineDaily(series){
-    // expects: [{date:"YYYY-MM-DD", value:Number}]
-    return (series || []).map(p => {
-      const [y,m,d] = p.date.split('-').map(Number);
-      const dt = new Date(Date.UTC(y, (m||1)-1, d||1, 0, 0, 0));
       return { time: Math.floor(dt.getTime()/1000), value: Number(p.value) };
     });
   }
@@ -462,6 +427,8 @@
       borderColor: 'rgba(150,163,199,.18)',
       timeVisible: true,
       secondsVisible: false,
+
+      // ✅ X축 KST(Asia/Seoul)
       tickMarkFormatter: (time) => {
         const d = new Date(time * 1000);
         return d.toLocaleTimeString('ko-KR', {
@@ -472,6 +439,7 @@
         });
       },
     },
+
     rightPriceScale: { borderColor: 'rgba(150,163,199,.18)' },
     crosshair: {
       vertLine: { color: 'rgba(156,194,255,.25)' },
@@ -493,7 +461,7 @@
     wickDownColor: 'rgba(255,85,119,1)',
   });
 
-  // DXY (line) - 5m + 3d
+  // DXY (line)
   const cDXY = LightweightCharts.createChart(document.getElementById('chart_dxy'), {
     ...commonChartOptions,
     height: 260,
@@ -503,7 +471,7 @@
     lineWidth: 2,
   });
 
-  // KR10Y (line) - 5m + 7d
+  // KR10Y (line)
   const cKR10Y = LightweightCharts.createChart(document.getElementById('chart_kr10y'), {
     ...commonChartOptions,
     height: 260,
@@ -523,16 +491,6 @@
     lineWidth: 2,
   });
 
-  // ✅ Foreign flows (line)
-  const cForeign = LightweightCharts.createChart(document.getElementById('chart_foreign'), {
-    ...commonChartOptions,
-    height: 260,
-  });
-  const sForeignLine = cForeign.addLineSeries({
-    color: 'rgba(156,194,255,1)',
-    lineWidth: 2,
-  });
-
   // Resize handler
   function resizeCharts(){
     const usdEl = document.getElementById('chart_usd');
@@ -543,8 +501,6 @@
     cKR10Y.applyOptions({ width: krEl.clientWidth });
     const rsvEl = document.getElementById('chart_reserves');
     cRSV.applyOptions({ width: rsvEl.clientWidth });
-    const fEl = document.getElementById('chart_foreign');
-    cForeign.applyOptions({ width: fEl.clientWidth });
   }
   window.addEventListener('resize', resizeCharts);
 
@@ -590,13 +546,13 @@
     sUSDCandle.setData(toLCandles(usd));
     cUSD.timeScale().fitContent();
 
-    // 2) DXY: 5m + 3d (line) - 더 활발한 움직임
-    const dxy = await fetchJSON('/api/candles?symbol=DXY&interval=5m&range=3d');
+    // 2) DXY: keep 30m + 7d (line)
+    const dxy = await fetchJSON('/api/candles?symbol=DXY&interval=30m&range=7d');
     sDXYLine.setData(toLLineFromCandles(dxy));
     cDXY.timeScale().fitContent();
 
-    // 3) KR10Y: 5m + 7d (line) - 더 활발한 움직임
-    const kr = await fetchJSON('/api/candles?symbol=KR10Y&interval=5m&range=7d');
+    // 3) KR10Y: keep 30m + 30d (line)
+    const kr = await fetchJSON('/api/candles?symbol=KR10Y&interval=30m&range=30d');
     sKR10YLine.setData(toLLineFromCandles(kr));
     cKR10Y.timeScale().fitContent();
   }
@@ -606,24 +562,6 @@
     const pts = toLLineMonthly(j.series || []);
     sRSVLine.setData(pts);
     cRSV.timeScale().fitContent();
-  }
-
-  // ✅ 외국인 매매 동향
-  async function loadForeignFlows(){
-    try{
-      const j = await fetchJSON('/api/foreign-flows');
-      // 예상 구조: { today: Number, last7d: Number, series: [{date:"YYYY-MM-DD", value:Number}] }
-      document.getElementById('k_foreign_today').textContent = fmtInt(j.today);
-      document.getElementById('k_foreign_7d').textContent = fmtInt(j.last7d);
-      
-      const pts = toLLineDaily(j.series || []);
-      sForeignLine.setData(pts);
-      cForeign.timeScale().fitContent();
-    }catch(e){
-      document.getElementById('k_foreign_today').textContent = '-';
-      document.getElementById('k_foreign_7d').textContent = '-';
-      console.warn('/api/foreign-flows failed:', e);
-    }
   }
 
   async function loadReportFallback(state){
@@ -722,7 +660,6 @@
     try{ await loadLatest(); } catch(e){}
     try{ await loadCharts(); } catch(e){}
     try{ await loadReserves(); } catch(e){}
-    try{ await loadForeignFlows(); } catch(e){}
     try{ await loadReport(); } catch(e){}
     resizeCharts();
   }
@@ -732,7 +669,6 @@
   setInterval(() => loadLatest().catch(()=>{}), 10_000);
   setInterval(() => loadCharts().catch(()=>{}), 60_000);
   setInterval(() => loadReserves().catch(()=>{}), 600_000);
-  setInterval(() => loadForeignFlows().catch(()=>{}), 600_000);
   setInterval(() => loadReport().catch(()=>{}), 2 * 60 * 60 * 1000);
 </script>
 
@@ -747,3 +683,6 @@
 
 </body>
 </html>
+
+
+
