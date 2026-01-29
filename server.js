@@ -428,9 +428,15 @@ app.get("/api/foreign-flows", async (req, res) => {
       const foreignText = $(cols[2]).text().trim().replace(/,/g, "");
       
       if (dateText && foreignText && !isNaN(parseFloat(foreignText))) {
-        const date = new Date(dateText.replace(/\./g, "-"));
-        const net = parseFloat(foreignText) * 100000000; // 억원 -> 원
-        rows.push({ time: Math.floor(date.getTime() / 1000), net });
+        // 날짜 파싱: "2026.01.29" -> "2026-01-29"
+        const dateStr = dateText.replace(/\./g, "-");
+        const date = new Date(dateStr);
+        
+        // 유효한 날짜인지 확인
+        if (!isNaN(date.getTime())) {
+          const net = parseFloat(foreignText) * 100000000; // 억원 -> 원
+          rows.push({ time: Math.floor(date.getTime() / 1000), net });
+        }
       }
     });
     
