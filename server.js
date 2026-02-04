@@ -1,4 +1,4 @@
-// 최종 수정 버전 - DXY는 네이버, Gemini는 @google/generative-ai, Mock 제거
+// 최종 수정 버전 - DXY 네이버 크롤링 수정, Gemini v1beta 사용, 외국인 매매 제거
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -33,7 +33,7 @@ const state = {
   spread10y: null
 };
 
-// 강화된 Fetch (User-Agent + Timeout)
+// 강화된 Fetch
 async function fetchText(url, timeout = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -42,12 +42,10 @@ async function fetchText(url, timeout = 10000) {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
-        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
-        'Accept-Encoding': 'gzip, deflate, br',
-        'Connection': 'keep-alive',
-        'Upgrade-Insecure-Requests': '1'
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Connection': 'keep-alive'
       }
     });
     clearTimeout(timer);
@@ -65,7 +63,7 @@ function kstNowString() {
   return kst.toISOString().replace('T', ' ').substring(0, 19) + ' KST';
 }
 
-// 네이버 환율 크롤링 (USD, EUR)
+// 네이버 환율 크롤링
 async function crawlNaverFx() {
   try {
     const html = await fetchText('https://finance.naver.com/marketindex/');
@@ -98,31 +96,17 @@ async function crawlNaverFx() {
 async function crawlNaverDXY() {
   try {
     const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
-    const $ = cheerio.load(html);
     
-    // 셀렉터 시도
-    const selectors = [
-      '.current_price',
-      '.current',
-      '.price strong',
-      'strong.price',
-      '.value strong'
-    ];
+    // 정규식으로 97.41 같은 패턴 찾기
+    const match = html.match(/(\d{2,3}\.\d{2})/);
     
-    let dxy = null;
-    for (const sel of selectors) {
-      const text = $(sel).first().text().replace(/,/g, '').trim();
-      const val = parseFloat(text);
+    if (match) {
+      const val = parseFloat(match[1]);
       if (!isNaN(val) && val > 50 && val < 150) {
-        dxy = val;
-        break;
+        state.DXY = parseFloat(val.toFixed(2));
+        console.log(`✅ DXY: ${state.DXY}`);
+        return true;
       }
-    }
-    
-    if (dxy) {
-      state.DXY = parseFloat(dxy.toFixed(2));
-      console.log(`✅ DXY: ${state.DXY}`);
-      return true;
     }
     
     throw new Error('DXY 파싱 실패');
@@ -195,9 +179,9 @@ async function updateAll() {
   }
 }
 
-// 초기 크롤링 + 주기적 실행
+// 초기 크롤링
 updateAll();
-setInterval(updateAll, 60000); // 1분마다
+setInterval(updateAll, 60000);
 
 // API: 최신 데이터
 app.get('/api/latest', (req, res) => {
@@ -207,7 +191,7 @@ app.get('/api/latest', (req, res) => {
   });
 });
 
-// API: 캔들 데이터
+// API: 캔들
 app.get('/api/candles', (req, res) => {
   const { symbol = 'USDKRW', interval = '1m', range = '24h' } = req.query;
   
@@ -236,7 +220,7 @@ app.get('/api/candles', (req, res) => {
   });
 });
 
-// API: 외화보유액 (정적 데이터)
+// API: 외화보유액
 app.get('/api/reserves', (req, res) => {
   res.json({
     source: 'BOK press release',
@@ -249,36 +233,6 @@ app.get('/api/reserves', (req, res) => {
       { month: '2025-12', value: 425.8 },
       { month: '2026-01', value: 424.6 }
     ]
-  });
-});
-
-// API: 외국인 매매 동향 (Mock - 네이버 동적 로딩 문제로 대체)
-app.get('/api/foreign-flows', (req, res) => {
-  const now = Date.now();
-  const mockData = [];
-  
-  for (let i = 29; i >= 0; i--) {
-    const ts = Math.floor((now - i * 86400000) / 1000);
-    const net = (Math.random() - 0.5) * 1e9;
-    mockData.push({ time: ts, net: Math.round(net) });
-  }
-  
-  const todayNet = mockData[mockData.length - 1].net;
-  const last7dNet = mockData.slice(-7).reduce((sum, d) => sum + d.net, 0);
-  
-  res.json({
-    today: {
-      netBuy: todayNet > 0 ? todayNet : 0,
-      netSell: todayNet < 0 ? Math.abs(todayNet) : 0
-    },
-    last7d: {
-      netBuy: last7dNet > 0 ? last7dNet : 0,
-      netSell: last7dNet < 0 ? Math.abs(last7dNet) : 0
-    },
-    series: mockData,
-    asofKST: kstNowString(),
-    source: 'Mock Data',
-    note: '네이버 동적 로딩 문제로 임시 데이터'
   });
 });
 
@@ -312,11 +266,11 @@ app.get('/api/market/today', async (req, res) => {
   }
 });
 
-// API: AI 분석 (Gemini)
+// API: AI 분석 (Gemini v1beta)
 const { GoogleGenerativeAI } = require('@google/generative-ai');
 const analysisCache = new Map();
-const CACHE_TTL = 24 * 60 * 60 * 1000; // 24시간
-const COOLDOWN = 30 * 60 * 1000; // 30분
+const CACHE_TTL = 24 * 60 * 60 * 1000;
+const COOLDOWN = 30 * 60 * 1000;
 
 app.get('/api/analysis', async (req, res) => {
   const symbol = req.query.symbol || 'USDKRW';
@@ -328,7 +282,7 @@ app.get('/api/analysis', async (req, res) => {
     return res.json({ ...cached.data, cached: true });
   }
   
-  // 쿨다운 확인
+  // 쿨다운
   if (cached && Date.now() - cached.timestamp < COOLDOWN) {
     const retryAfter = Math.ceil((COOLDOWN - (Date.now() - cached.timestamp)) / 1000);
     return res.status(429).json({
@@ -337,7 +291,6 @@ app.get('/api/analysis', async (req, res) => {
     });
   }
   
-  // API 키 확인
   const apiKey = process.env.GEMINI_API_KEY;
   if (!apiKey) {
     return res.status(500).json({
@@ -346,10 +299,16 @@ app.get('/api/analysis', async (req, res) => {
   }
   
   try {
-    const genAI = new GoogleGenerativeAI(apiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
-    
-    const prompt = `당신은 외환시장 전문 애널리스트입니다. 현재 시장 상황을 분석해주세요.
+    // v1beta API 직접 호출
+    const response = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          contents: [{
+            parts: [{
+              text: `당신은 외환시장 전문 애널리스트입니다. 현재 시장 상황을 분석해주세요.
 
 현재 데이터:
 - USD/KRW: ${state.USDKRW || 'N/A'}
@@ -361,10 +320,19 @@ app.get('/api/analysis', async (req, res) => {
 다음 형식으로 200자 이내 브리핑을 작성해주세요:
 1. 현재 환율 수준 언급
 2. 주요 변동 요인 1-2가지
-3. 단기 전망 (상승/하락/보합)`;
-
-    const result = await model.generateContent(prompt);
-    const text = result.response.text();
+3. 단기 전망 (상승/하락/보합)`
+            }]
+          }]
+        })
+      }
+    );
+    
+    if (!response.ok) {
+      throw new Error(`Gemini API error: ${response.status}`);
+    }
+    
+    const result = await response.json();
+    const text = result.candidates[0].content.parts[0].text;
     
     const data = {
       symbol,
@@ -380,14 +348,10 @@ app.get('/api/analysis', async (req, res) => {
   } catch (err) {
     console.error('❌ /api/analysis error:', err.message);
     
-    if (err.message.includes('quota') || err.message.includes('rate')) {
-      return res.status(429).json({
-        error: 'AI API 요청 한도 초과',
-        retryAfter: 300
-      });
-    }
-    
-    res.status(500).json({ error: 'AI 분석 생성 실패' });
+    res.status(500).json({ 
+      error: 'AI 분석 생성 실패',
+      details: err.message 
+    });
   }
 });
 
