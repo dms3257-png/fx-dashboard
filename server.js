@@ -402,7 +402,7 @@ ${JSON.stringify(candles.slice(-24), null, 2)}
     
     if (useGemini) {
       // Google Gemini 사용
-      const model = gemini.getGenerativeModel({ model: "gemini-pro" });
+      const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
       const result = await model.generateContent(prompt);
       analysis = result.response.text().trim();
       console.log("✅ AI 분석 (Gemini):", analysis.substring(0, 50) + "...");
