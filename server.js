@@ -1,4 +1,4 @@
-// 최종 버전 - 네이버 DXY + Gemini 2.5 Flash
+// 최종 완성 버전 - 크롤링 + 인코딩 수정
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -41,11 +41,16 @@ async function fetchText(url, timeout = 10000) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'ko-KR,ko;q=0.9'
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Accept-Charset': 'utf-8'
       }
     });
     clearTimeout(timer);
-    return await response.text();
+    
+    // UTF-8로 디코딩
+    const buffer = await response.arrayBuffer();
+    const decoder = new TextDecoder('utf-8');
+    return decoder.decode(buffer);
   } catch (err) {
     clearTimeout(timer);
     throw err;
@@ -63,19 +68,31 @@ async function crawlNaverFx() {
     const html = await fetchText('https://finance.naver.com/marketindex/');
     const $ = cheerio.load(html);
     
-    const usdText = $('.market_tx .value').first().text().replace(/,/g, '');
-    const usd = parseFloat(usdText);
-    if (!isNaN(usd) && usd > 500 && usd < 2000) {
-      state.USDKRW = usd;
-      console.log(`✅ USD/KRW: ${usd}`);
-    }
+    // USD/KRW - "미국USD" 찾기
+    $('h3.h_lst').each((i, el) => {
+      const title = $(el).text().trim();
+      if (title.includes('미국') && title.includes('USD')) {
+        const valueText = $(el).parent().find('.value').text().replace(/,/g, '');
+        const usd = parseFloat(valueText);
+        if (!isNaN(usd) && usd > 500 && usd < 2000) {
+          state.USDKRW = usd;
+          console.log(`✅ USD/KRW: ${usd}`);
+        }
+      }
+    });
     
-    const eurText = $('.market_tx .value').eq(2).text().replace(/,/g, '');
-    const eur = parseFloat(eurText);
-    if (!isNaN(eur) && eur > 800 && eur < 2500) {
-      state.EURKRW = eur;
-      console.log(`✅ EUR/KRW: ${eur}`);
-    }
+    // EUR/KRW - "유럽연합EUR" 찾기
+    $('h3.h_lst').each((i, el) => {
+      const title = $(el).text().trim();
+      if (title.includes('유럽') && title.includes('EUR')) {
+        const valueText = $(el).parent().find('.value').text().replace(/,/g, '');
+        const eur = parseFloat(valueText);
+        if (!isNaN(eur) && eur > 800 && eur < 2500) {
+          state.EURKRW = eur;
+          console.log(`✅ EUR/KRW: ${eur}`);
+        }
+      }
+    });
     
     return true;
   } catch (err) {
@@ -86,13 +103,12 @@ async function crawlNaverFx() {
 
 async function crawlNaverDXY() {
   try {
-    // 네이버 증권 국제 지수 페이지
     const html = await fetchText('https://finance.naver.com/world/');
     const $ = cheerio.load(html);
     
-    // DXY 찾기
+    // 달러인덱스 찾기
     let dxy = null;
-    $('.tb_type1 tr').each((i, row) => {
+    $('tr').each((i, row) => {
       const name = $(row).find('th a').text().trim();
       if (name.includes('달러인덱스') || name.includes('DXY')) {
         const valueText = $(row).find('td').first().text().replace(/,/g, '').trim();
@@ -121,16 +137,17 @@ async function crawlNaverBond() {
     const html = await fetchText('https://finance.naver.com/marketindex/');
     const $ = cheerio.load(html);
     
-    $('.market_tx').each((i, el) => {
-      const title = $(el).find('a').text().trim();
-      const valueText = $(el).find('.value').text().replace(/,/g, '');
+    // 채권 수익률 찾기
+    $('h3.h_lst').each((i, el) => {
+      const title = $(el).text().trim();
+      const valueText = $(el).parent().find('.value').text().replace(/,/g, '');
       const value = parseFloat(valueText);
       
-      if (title.includes('한국 10년') && !isNaN(value)) {
+      if (title.includes('한국') && title.includes('10년') && !isNaN(value)) {
         state.KR10Y = value;
         console.log(`✅ KR10Y: ${value}`);
       }
-      if (title.includes('미국 10년') && !isNaN(value)) {
+      if (title.includes('미국') && title.includes('10년') && !isNaN(value)) {
         state.US10Y = value;
         console.log(`✅ US10Y: ${value}`);
       }
