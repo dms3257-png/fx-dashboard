@@ -340,36 +340,9 @@
       </div>
     </div>
 
-    <!-- 외국인 매매 동향 -->
-    <div class="card full-width">
-      <div class="card-header">
-        <div class="card-title">외국인 외환 매매 동향</div>
-        <div class="card-subtitle">
-          <span class="badge">Line</span>
-          <span class="badge">Daily</span>
-          <a href="/api/foreign-flows" class="link" target="_blank">/api/foreign-flows</a>
-        </div>
-      </div>
-      <div class="kpi-grid" style="grid-template-columns: repeat(2, 1fr);">
-        <div class="kpi-item">
-          <div class="kpi-label">오늘 순매수</div>
-          <div class="kpi-value" id="kpi-foreign-today">-</div>
-          <div class="kpi-note">단위: 백만 USD</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-label">최근 7일 누적</div>
-          <div class="kpi-value" id="kpi-foreign-7d">-</div>
-          <div class="kpi-note">단위: 백만 USD</div>
-        </div>
-      </div>
-      <div class="chart-container" id="chart-foreign" style="height: 350px;"></div>
-      <div class="note">
-        양수: 순매수 · 음수: 순매도 · 출처: 네이버 증권 투자자별 매매동향
-      </div>
-    </div>
 
     <footer>
-      데이터: <code>/api/latest</code>, <code>/api/candles</code>, <code>/api/reserves</code>, <code>/api/foreign-flows</code>
+      데이터: <code>/api/latest</code>, <code>/api/candles</code>, <code>/api/reserves</code>
     </footer>
   </div>
 
@@ -449,10 +422,8 @@
 
       // Foreign
       charts.foreign = LightweightCharts.createChart(
-        document.getElementById('chart-foreign'), 
         { ...chartOptions, height: 350 }
       );
-      series.foreign = charts.foreign.addLineSeries({ 
         color: '#ec4899', 
         lineWidth: 2 
       });
@@ -507,31 +478,6 @@
       }
     }
 
-    async function loadForeignFlows() {
-      try {
-        const res = await fetch('/api/foreign-flows');
-        const data = await res.json();
-        
-        const todayNet = data.today.netBuy + data.today.netSell;
-        const last7dNet = data.last7d.netBuy + data.last7d.netSell;
-        
-        document.getElementById('kpi-foreign-today').textContent = 
-          (todayNet / 1000000).toFixed(0) + 'M';
-        document.getElementById('kpi-foreign-7d').textContent = 
-          (last7dNet / 1000000).toFixed(0) + 'M';
-        
-        // 시계열 데이터 필터링 (유효한 시간만)
-        const validSeries = data.series.filter(item => {
-          return item.time && !isNaN(item.time) && item.time > 0;
-        });
-        
-        if (validSeries.length > 0) {
-          series.foreign.setData(validSeries);
-        }
-      } catch (err) {
-        console.error('❌ loadForeignFlows error:', err);
-      }
-    }
 
     async function loadNews() {
       try {
@@ -601,7 +547,6 @@
         loadCandles('DXY', '5m', '3d', series.dxy),
         loadCandles('KR10Y', '5m', '7d', series.kr10y),
         loadReserves(),
-        loadForeignFlows(),
         loadNews()
       ]);
     }
