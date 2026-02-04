@@ -1,4 +1,4 @@
-// 최종 완성 버전 - 크롤링 + 인코딩 수정
+// 최종 완성 - DXY 모바일 페이지로 수정
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -39,7 +39,7 @@ async function fetchText(url, timeout = 10000) {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'ko-KR,ko;q=0.9',
         'Accept-Charset': 'utf-8'
@@ -47,7 +47,6 @@ async function fetchText(url, timeout = 10000) {
     });
     clearTimeout(timer);
     
-    // UTF-8로 디코딩
     const buffer = await response.arrayBuffer();
     const decoder = new TextDecoder('utf-8');
     return decoder.decode(buffer);
@@ -68,7 +67,7 @@ async function crawlNaverFx() {
     const html = await fetchText('https://finance.naver.com/marketindex/');
     const $ = cheerio.load(html);
     
-    // USD/KRW - "미국USD" 찾기
+    // USD/KRW
     $('h3.h_lst').each((i, el) => {
       const title = $(el).text().trim();
       if (title.includes('미국') && title.includes('USD')) {
@@ -81,7 +80,7 @@ async function crawlNaverFx() {
       }
     });
     
-    // EUR/KRW - "유럽연합EUR" 찾기
+    // EUR/KRW
     $('h3.h_lst').each((i, el) => {
       const title = $(el).text().trim();
       if (title.includes('유럽') && title.includes('EUR')) {
@@ -103,26 +102,33 @@ async function crawlNaverFx() {
 
 async function crawlNaverDXY() {
   try {
-    const html = await fetchText('https://finance.naver.com/world/');
-    const $ = cheerio.load(html);
+    // 모바일 페이지 사용! ⭐
+    const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
     
-    // 달러인덱스 찾기
-    let dxy = null;
-    $('tr').each((i, row) => {
-      const name = $(row).find('th a').text().trim();
-      if (name.includes('달러인덱스') || name.includes('DXY')) {
-        const valueText = $(row).find('td').first().text().replace(/,/g, '').trim();
-        const val = parseFloat(valueText);
-        if (!isNaN(val) && val > 50 && val < 150) {
-          dxy = val;
+    // HTML에서 97.41 같은 숫자 패턴 찾기
+    // "달러인덱스**97.41**" 형태로 있음
+    const matches = html.match(/달러인덱스\*\*(\d{2,3}\.\d{2})\*\*/);
+    
+    if (matches && matches[1]) {
+      const val = parseFloat(matches[1]);
+      if (!isNaN(val) && val > 50 && val < 150) {
+        state.DXY = parseFloat(val.toFixed(2));
+        console.log(`✅ DXY: ${state.DXY}`);
+        return true;
+      }
+    }
+    
+    // 백업: 일반 숫자 패턴
+    const backup = html.match(/(\d{2,3}\.\d{2})/g);
+    if (backup && backup.length > 0) {
+      for (const num of backup) {
+        const val = parseFloat(num);
+        if (!isNaN(val) && val > 90 && val < 110) {
+          state.DXY = parseFloat(val.toFixed(2));
+          console.log(`✅ DXY (백업): ${state.DXY}`);
+          return true;
         }
       }
-    });
-    
-    if (dxy) {
-      state.DXY = parseFloat(dxy.toFixed(2));
-      console.log(`✅ DXY: ${state.DXY}`);
-      return true;
     }
     
     throw new Error('DXY 파싱 실패');
@@ -137,7 +143,6 @@ async function crawlNaverBond() {
     const html = await fetchText('https://finance.naver.com/marketindex/');
     const $ = cheerio.load(html);
     
-    // 채권 수익률 찾기
     $('h3.h_lst').each((i, el) => {
       const title = $(el).text().trim();
       const valueText = $(el).parent().find('.value').text().replace(/,/g, '');
