@@ -1,4 +1,4 @@
-// 최종 완성 - DXY 모바일 페이지로 수정
+// 최종 완성 버전 - exchangeDetail 페이지 크롤링
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -39,10 +39,9 @@ async function fetchText(url, timeout = 10000) {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 15_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/15.0 Mobile/15E148 Safari/604.1',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'ko-KR,ko;q=0.9',
-        'Accept-Charset': 'utf-8'
+        'Accept-Language': 'ko-KR,ko;q=0.9'
       }
     });
     clearTimeout(timer);
@@ -64,34 +63,27 @@ function kstNowString() {
 
 async function crawlNaverFx() {
   try {
-    const html = await fetchText('https://finance.naver.com/marketindex/');
-    const $ = cheerio.load(html);
-    
     // USD/KRW
-    $('h3.h_lst').each((i, el) => {
-      const title = $(el).text().trim();
-      if (title.includes('미국') && title.includes('USD')) {
-        const valueText = $(el).parent().find('.value').text().replace(/,/g, '');
-        const usd = parseFloat(valueText);
-        if (!isNaN(usd) && usd > 500 && usd < 2000) {
-          state.USDKRW = usd;
-          console.log(`✅ USD/KRW: ${usd}`);
-        }
+    const usdHtml = await fetchText('https://finance.naver.com/marketindex/exchangeDetail.naver?marketindexCd=FX_USDKRW');
+    const usdMatch = usdHtml.match(/__(\d{1,},?\d{3}\.\d{2})__/);
+    if (usdMatch && usdMatch[1]) {
+      const usd = parseFloat(usdMatch[1].replace(/,/g, ''));
+      if (!isNaN(usd) && usd > 500 && usd < 2000) {
+        state.USDKRW = usd;
+        console.log(`✅ USD/KRW: ${usd}`);
       }
-    });
+    }
     
     // EUR/KRW
-    $('h3.h_lst').each((i, el) => {
-      const title = $(el).text().trim();
-      if (title.includes('유럽') && title.includes('EUR')) {
-        const valueText = $(el).parent().find('.value').text().replace(/,/g, '');
-        const eur = parseFloat(valueText);
-        if (!isNaN(eur) && eur > 800 && eur < 2500) {
-          state.EURKRW = eur;
-          console.log(`✅ EUR/KRW: ${eur}`);
-        }
+    const eurHtml = await fetchText('https://finance.naver.com/marketindex/exchangeDetail.naver?marketindexCd=FX_EURKRW');
+    const eurMatch = eurHtml.match(/__(\d{1,},?\d{3}\.\d{2})__/);
+    if (eurMatch && eurMatch[1]) {
+      const eur = parseFloat(eurMatch[1].replace(/,/g, ''));
+      if (!isNaN(eur) && eur > 800 && eur < 2500) {
+        state.EURKRW = eur;
+        console.log(`✅ EUR/KRW: ${eur}`);
       }
-    });
+    }
     
     return true;
   } catch (err) {
@@ -102,11 +94,7 @@ async function crawlNaverFx() {
 
 async function crawlNaverDXY() {
   try {
-    // 모바일 페이지 사용! ⭐
     const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
-    
-    // HTML에서 97.41 같은 숫자 패턴 찾기
-    // "달러인덱스**97.41**" 형태로 있음
     const matches = html.match(/달러인덱스\*\*(\d{2,3}\.\d{2})\*\*/);
     
     if (matches && matches[1]) {
@@ -118,7 +106,6 @@ async function crawlNaverDXY() {
       }
     }
     
-    // 백업: 일반 숫자 패턴
     const backup = html.match(/(\d{2,3}\.\d{2})/g);
     if (backup && backup.length > 0) {
       for (const num of backup) {
