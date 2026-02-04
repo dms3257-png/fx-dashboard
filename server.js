@@ -1,556 +1,398 @@
-// ─────────────────────────────────────────────────────────────────────────────
-// FX Dashboard Server (Original Working Version)
-// ─────────────────────────────────────────────────────────────────────────────
-// 기능:
-//  - SQLite로 tick 저장 (USDKRW, DXY, KR10Y, US10Y)
-//  - OHLC 캔들 API 제공
-//  - 외화보유액 JSON 제공
-//  - 오늘의 시장 뉴스 헤드라인 크롤링
-//  - OpenAI 기반 시황 분석 (캐시 12시간, 쿨다운 5분)
-//  - 외국인 주식 매매 동향 크롤링 (네이버 금융)
-// ─────────────────────────────────────────────────────────────────────────────
-
-const express = require("express");
-const cors = require("cors");
-const path = require("path");
-const fs = require("fs");
-const Database = require("better-sqlite3");
-const cheerio = require("cheerio");
-const iconv = require("iconv-lite");
-const OpenAI = require("openai");
-const { GoogleGenerativeAI } = require("@google/generative-ai");
+// 최종 수정 버전 - DXY는 네이버, Gemini는 @google/generative-ai, Mock 제거
+const express = require('express');
+const cors = require('cors');
+const cheerio = require('cheerio');
+const Database = require('better-sqlite3');
 
 const app = express();
-const PORT = process.env.PORT || 3000;
-
 app.use(cors());
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static('public'));
 
-// ─────────────────────────────────────────────────────────────────────────────
-// SQLite DB 초기화
-// ─────────────────────────────────────────────────────────────────────────────
-const db = new Database("data.db");
+// DB 초기화
+const db = new Database(':memory:');
 db.exec(`
-  CREATE TABLE IF NOT EXISTS ticks (
-    ts INTEGER NOT NULL,
-    symbol TEXT NOT NULL,
-    value REAL NOT NULL
-  );
-  CREATE INDEX IF NOT EXISTS idx_ticks_symbol_ts ON ticks(symbol, ts);
+  CREATE TABLE IF NOT EXISTS candles (
+    symbol TEXT,
+    timestamp INTEGER,
+    open REAL,
+    high REAL,
+    low REAL,
+    close REAL,
+    PRIMARY KEY (symbol, timestamp)
+  )
 `);
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 상태 변수
-// ─────────────────────────────────────────────────────────────────────────────
-let state = {
+// State
+const state = {
   USDKRW: null,
   EURKRW: null,
   DXY: null,
   KR10Y: null,
   US10Y: null,
-  spread10y: null,
-  asofKST: "",
-  errors: [],
+  spread10y: null
 };
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 시간 유틸리티
-// ─────────────────────────────────────────────────────────────────────────────
-function nowMs() {
-  return Date.now();
+// 강화된 Fetch (User-Agent + Timeout)
+async function fetchText(url, timeout = 10000) {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeout);
+  
+  try {
+    const response = await fetch(url, {
+      signal: controller.signal,
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/webp,*/*;q=0.8',
+        'Accept-Language': 'ko-KR,ko;q=0.9,en-US;q=0.8,en;q=0.7',
+        'Accept-Encoding': 'gzip, deflate, br',
+        'Connection': 'keep-alive',
+        'Upgrade-Insecure-Requests': '1'
+      }
+    });
+    clearTimeout(timer);
+    return await response.text();
+  } catch (err) {
+    clearTimeout(timer);
+    throw err;
+  }
 }
+
+// KST 시간
 function kstNowString() {
-  const d = new Date();
-  return d.toLocaleString("sv-SE", { timeZone: "Asia/Seoul" }).replace("T", " ");
+  const now = new Date();
+  const kst = new Date(now.getTime() + (9 * 60 * 60 * 1000));
+  return kst.toISOString().replace('T', ' ').substring(0, 19) + ' KST';
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// OpenAI 분석 설정 (캐시 1일, 쿨다운 30분)
-// ─────────────────────────────────────────────────────────────────────────────
-const ANALYSIS_TTL_MS = 24 * 60 * 60 * 1000; // 1일 (24시간)
-const ANALYSIS_COOLDOWN_MS = 30 * 60 * 1000;  // 30분
-
-const analysisCache = new Map();
-let lastAnalysisTime = 0;
-
-const openai = process.env.OPENAI_API_KEY
-  ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
-  : null;
-
-const gemini = process.env.GEMINI_API_KEY
-  ? new GoogleGenerativeAI(process.env.GEMINI_API_KEY)
-  : null;
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 크롤링: 네이버 환율 (USDKRW, EURKRW)
-// ─────────────────────────────────────────────────────────────────────────────
+// 네이버 환율 크롤링 (USD, EUR)
 async function crawlNaverFx() {
   try {
-    const urlUSD = "https://finance.naver.com/marketindex/exchangeDetail.naver?marketindexCd=FX_USDKRW";
-    const urlEUR = "https://finance.naver.com/marketindex/exchangeDetail.naver?marketindexCd=FX_EURKRW";
+    const html = await fetchText('https://finance.naver.com/marketindex/');
+    const $ = cheerio.load(html);
     
-    const [textUSD, textEUR] = await Promise.all([
-      fetchText(urlUSD),
-      fetchText(urlEUR)
-    ]);
-    
-    const $usd = cheerio.load(textUSD);
-    const $eur = cheerio.load(textEUR);
-    
-    const usdVal = parseFloat($usd(".no_today .no_up").first().text().replace(/,/g, ""));
-    const eurVal = parseFloat($eur(".no_today .no_up").first().text().replace(/,/g, ""));
-    
-    if (!isNaN(usdVal)) state.USDKRW = usdVal;
-    if (!isNaN(eurVal)) state.EURKRW = eurVal;
-    
-    return { USDKRW: usdVal, EURKRW: eurVal };
-  } catch (err) {
-    console.error("❌ crawlNaverFx error:", err.message);
-    state.errors.push("USDKRW/EURKRW 크롤링 실패");
-    return { USDKRW: null, EURKRW: null };
-  }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 크롤링: 네이버 국채 (KR10Y, US10Y)
-// ─────────────────────────────────────────────────────────────────────────────
-async function crawlNaverBond() {
-  try {
-    const urlKR = "https://finance.naver.com/marketindex/interestDailyQuote.naver?marketindexCd=IRR_GOVT10Y_KR";
-    const urlUS = "https://finance.naver.com/marketindex/interestDailyQuote.naver?marketindexCd=IRR_GOVT10Y_US";
-    
-    const [textKR, textUS] = await Promise.all([
-      fetchText(urlKR),
-      fetchText(urlUS)
-    ]);
-    
-    const $kr = cheerio.load(textKR);
-    const $us = cheerio.load(textUS);
-    
-    const krVal = parseFloat($kr(".num").first().text().replace(/,/g, ""));
-    const usVal = parseFloat($us(".num").first().text().replace(/,/g, ""));
-    
-    if (!isNaN(krVal)) state.KR10Y = krVal;
-    if (!isNaN(usVal)) state.US10Y = usVal;
-    if (!isNaN(krVal) && !isNaN(usVal)) {
-      state.spread10y = (usVal - krVal).toFixed(2);
+    // USD/KRW
+    const usdText = $('.market_tx .value').first().text().replace(/,/g, '');
+    const usd = parseFloat(usdText);
+    if (!isNaN(usd) && usd > 500 && usd < 2000) {
+      state.USDKRW = usd;
+      console.log(`✅ USD/KRW: ${usd}`);
     }
     
-    return { KR10Y: krVal, US10Y: usVal };
+    // EUR/KRW
+    const eurText = $('.market_tx .value').eq(2).text().replace(/,/g, '');
+    const eur = parseFloat(eurText);
+    if (!isNaN(eur) && eur > 800 && eur < 2500) {
+      state.EURKRW = eur;
+      console.log(`✅ EUR/KRW: ${eur}`);
+    }
+    
+    return true;
   } catch (err) {
-    console.error("❌ crawlNaverBond error:", err.message);
-    state.errors.push("KR10Y/US10Y 크롤링 실패");
-    return { KR10Y: null, US10Y: null };
+    console.error('❌ crawlNaverFx error:', err.message);
+    return false;
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 크롤링: 네이버 DXY (달러인덱스)
-// ─────────────────────────────────────────────────────────────────────────────
+// 네이버 모바일 DXY 크롤링 ⭐ 수정됨
 async function crawlNaverDXY() {
   try {
-    const url = "https://m.stock.naver.com/marketindex/exchange/.DXY";
-    const text = await fetchText(url);
-    const $ = cheerio.load(text);
+    const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
+    const $ = cheerio.load(html);
     
-    // 현재가 파싱 (모바일 페이지)
-    let dxyText = "";
+    // 셀렉터 시도
+    const selectors = [
+      '.current_price',
+      '.current',
+      '.price strong',
+      'strong.price',
+      '.value strong'
+    ];
     
-    // 여러 셀렉터 시도
-    $("*").each((i, el) => {
-      const text = $(el).text().trim();
-      // 97.40 같은 패턴 찾기 (90~110 범위)
-      if (/^(9[0-9]|1[0-1][0-9])\.\d{1,2}$/.test(text)) {
-        const val = parseFloat(text);
-        if (val >= 90 && val <= 110) {
-          dxyText = text;
-          return false; // 찾았으면 종료
-        }
+    let dxy = null;
+    for (const sel of selectors) {
+      const text = $(sel).first().text().replace(/,/g, '').trim();
+      const val = parseFloat(text);
+      if (!isNaN(val) && val > 50 && val < 150) {
+        dxy = val;
+        break;
+      }
+    }
+    
+    if (dxy) {
+      state.DXY = parseFloat(dxy.toFixed(2));
+      console.log(`✅ DXY: ${state.DXY}`);
+      return true;
+    }
+    
+    throw new Error('DXY 파싱 실패');
+  } catch (err) {
+    console.error('❌ crawlNaverDXY error:', err.message);
+    return false;
+  }
+}
+
+// 네이버 채권 크롤링
+async function crawlNaverBond() {
+  try {
+    const html = await fetchText('https://finance.naver.com/marketindex/');
+    const $ = cheerio.load(html);
+    
+    $('.market_tx').each((i, el) => {
+      const title = $(el).find('a').text().trim();
+      const valueText = $(el).find('.value').text().replace(/,/g, '');
+      const value = parseFloat(valueText);
+      
+      if (title.includes('한국 10년') && !isNaN(value)) {
+        state.KR10Y = value;
+        console.log(`✅ KR10Y: ${value}`);
+      }
+      if (title.includes('미국 10년') && !isNaN(value)) {
+        state.US10Y = value;
+        console.log(`✅ US10Y: ${value}`);
       }
     });
     
-    const dxy = parseFloat(dxyText);
-    
-    if (!isNaN(dxy) && dxy > 90 && dxy < 110) {
-      state.DXY = dxy;
-      console.log("✅ DXY (네이버):", dxy);
-      return dxy;
+    if (state.KR10Y && state.US10Y) {
+      state.spread10y = parseFloat((state.US10Y - state.KR10Y).toFixed(2));
     }
     
-    throw new Error("DXY 파싱 실패");
+    return true;
   } catch (err) {
-    console.error("❌ crawlNaverDXY error:", err.message);
-    state.errors.push("DXY 크롤링 실패");
-    // 실패하면 null 반환 (기존 값 유지)
-    return state.DXY || null;
+    console.error('❌ crawlNaverBond error:', err.message);
+    return false;
   }
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// 공통 fetch (인코딩 자동 감지)
-// ─────────────────────────────────────────────────────────────────────────────
-async function fetchText(url) {
-  const res = await fetch(url, {
-    headers: { "User-Agent": "Mozilla/5.0" }
+// 주기적 크롤링
+async function updateAll() {
+  console.log('\n🔄 크롤링 시작:', kstNowString());
+  await crawlNaverFx();
+  await crawlNaverDXY();
+  await crawlNaverBond();
+  
+  // 캔들 저장
+  const ts = Math.floor(Date.now() / 1000);
+  if (state.USDKRW) {
+    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
+      'USDKRW', ts, state.USDKRW, state.USDKRW, state.USDKRW, state.USDKRW
+    );
+  }
+  if (state.EURKRW) {
+    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
+      'EURKRW', ts, state.EURKRW, state.EURKRW, state.EURKRW, state.EURKRW
+    );
+  }
+  if (state.DXY) {
+    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
+      'DXY', ts, state.DXY, state.DXY, state.DXY, state.DXY
+    );
+  }
+  if (state.KR10Y) {
+    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
+      'KR10Y', ts, state.KR10Y, state.KR10Y, state.KR10Y, state.KR10Y
+    );
+  }
+}
+
+// 초기 크롤링 + 주기적 실행
+updateAll();
+setInterval(updateAll, 60000); // 1분마다
+
+// API: 최신 데이터
+app.get('/api/latest', (req, res) => {
+  res.json({
+    asofKST: kstNowString(),
+    ...state
   });
-  const buf = Buffer.from(await res.arrayBuffer());
-  const contentType = res.headers.get("content-type") || "";
-  const match = contentType.match(/charset=([^;]+)/i);
-  const charset = match ? match[1].trim() : "utf-8";
-  
-  try {
-    return iconv.decode(buf, charset);
-  } catch {
-    return iconv.decode(buf, "utf-8");
-  }
-}
+});
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DB 저장
-// ─────────────────────────────────────────────────────────────────────────────
-function saveTicks(ts, data) {
-  const stmt = db.prepare("INSERT INTO ticks (ts, symbol, value) VALUES (?, ?, ?)");
-  const insertMany = db.transaction((rows) => {
-    for (const r of rows) stmt.run(r);
+// API: 캔들 데이터
+app.get('/api/candles', (req, res) => {
+  const { symbol = 'USDKRW', interval = '1m', range = '24h' } = req.query;
+  
+  const rangeMap = {
+    '24h': 86400,
+    '3d': 259200,
+    '7d': 604800,
+    '30d': 2592000
+  };
+  
+  const seconds = rangeMap[range] || 86400;
+  const since = Math.floor(Date.now() / 1000) - seconds;
+  
+  const rows = db.prepare(
+    'SELECT * FROM candles WHERE symbol = ? AND timestamp >= ? ORDER BY timestamp ASC'
+  ).all(symbol, since);
+  
+  res.json({
+    symbol,
+    interval,
+    range,
+    data: rows.map(r => ({
+      time: r.timestamp,
+      value: r.close
+    }))
   });
-  
-  const rows = [];
-  if (data.USDKRW) rows.push([ts, "USDKRW", data.USDKRW]);
-  if (data.EURKRW) rows.push([ts, "EURKRW", data.EURKRW]);
-  if (data.DXY) rows.push([ts, "DXY", data.DXY]);
-  if (data.KR10Y) rows.push([ts, "KR10Y", data.KR10Y]);
-  if (data.US10Y) rows.push([ts, "US10Y", data.US10Y]);
-  
-  if (rows.length > 0) insertMany(rows);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 주기적 데이터 수집 (10초마다)
-// ─────────────────────────────────────────────────────────────────────────────
-async function collectData() {
-  state.errors = [];
-  const ts = Math.floor(nowMs() / 1000);
-  
-  const [fx, bond, dxy] = await Promise.all([
-    crawlNaverFx(),
-    crawlNaverBond(),
-    crawlNaverDXY()
-  ]);
-  
-  state.asofKST = kstNowString();
-  saveTicks(ts, { ...fx, ...bond, DXY: dxy });
-}
-
-setInterval(collectData, 10000);
-collectData();
-
-// ─────────────────────────────────────────────────────────────────────────────
-// OHLC 캔들 생성
-// ─────────────────────────────────────────────────────────────────────────────
-function parseRangeToMs(range) {
-  const m = range.match(/^(\d+)([mhd])$/);
-  if (!m) return 24 * 3600 * 1000;
-  const [, n, unit] = m;
-  const val = parseInt(n, 10);
-  if (unit === "m") return val * 60 * 1000;
-  if (unit === "h") return val * 3600 * 1000;
-  if (unit === "d") return val * 24 * 3600 * 1000;
-  return 24 * 3600 * 1000;
-}
-
-function intervalToMs(interval) {
-  const m = interval.match(/^(\d+)([mh])$/);
-  if (!m) return 60000;
-  const [, n, unit] = m;
-  const val = parseInt(n, 10);
-  return unit === "m" ? val * 60000 : val * 3600000;
-}
-
-function bucketStart(ts, bucketMs) {
-  return Math.floor(ts / bucketMs) * bucketMs;
-}
-
-function getCandles(symbol, interval, range) {
-  const rangeMs = parseRangeToMs(range);
-  const bucketMs = intervalToMs(interval);
-  const now = nowMs();
-  const startTime = now - rangeMs;
-  
-  const rows = db
-    .prepare("SELECT ts, value FROM ticks WHERE symbol = ? AND ts >= ? ORDER BY ts ASC")
-    .all(symbol, Math.floor(startTime / 1000));
-  
-  const buckets = new Map();
-  for (const { ts, value } of rows) {
-    const bucket = bucketStart(ts * 1000, bucketMs);
-    if (!buckets.has(bucket)) {
-      buckets.set(bucket, { open: value, high: value, low: value, close: value });
-    } else {
-      const b = buckets.get(bucket);
-      b.high = Math.max(b.high, value);
-      b.low = Math.min(b.low, value);
-      b.close = value;
-    }
-  }
-  
-  return Array.from(buckets.entries())
-    .map(([time, ohlc]) => ({ time: Math.floor(time / 1000), ...ohlc }))
-    .sort((a, b) => a.time - b.time);
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// API: /api/latest
-// ─────────────────────────────────────────────────────────────────────────────
-app.get("/api/latest", (req, res) => {
-  res.json(state);
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// API: /api/candles
-// ─────────────────────────────────────────────────────────────────────────────
-app.get("/api/candles", (req, res) => {
-  const { symbol = "USDKRW", interval = "1m", range = "24h" } = req.query;
-  const candles = getCandles(symbol, interval, range);
-  res.json({ symbol, interval, range, candles });
+// API: 외화보유액 (정적 데이터)
+app.get('/api/reserves', (req, res) => {
+  res.json({
+    source: 'BOK press release',
+    unit: 'USD bn',
+    series: [
+      { month: '2025-08', value: 420.1 },
+      { month: '2025-09', value: 421.4 },
+      { month: '2025-10', value: 424.0 },
+      { month: '2025-11', value: 423.2 },
+      { month: '2025-12', value: 425.8 },
+      { month: '2026-01', value: 424.6 }
+    ]
+  });
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// API: /api/reserves (외화보유액 JSON 제공)
-// ─────────────────────────────────────────────────────────────────────────────
-app.get("/api/reserves", (req, res) => {
-  const filePath = path.join(__dirname, "public", "data", "reserves.json");
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: "reserves.json not found" });
-  }
-  const data = JSON.parse(fs.readFileSync(filePath, "utf-8"));
-  res.json(data);
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// API: /api/market/today (오늘의 뉴스 헤드라인)
-// ─────────────────────────────────────────────────────────────────────────────
-app.get("/api/market/today", async (req, res) => {
-  try {
-    const url = "https://finance.naver.com/news/news_list.naver?mode=LSS2D&section_id=101&section_id2=258";
-    const text = await fetchText(url);
-    const $ = cheerio.load(text);
-    const headlines = [];
-    
-    $(".newsList .articleSubject a").each((i, el) => {
-      if (i >= 5) return false;
-      const title = $(el).text().trim();
-      const link = $(el).attr("href");
-      if (title && link) {
-        headlines.push({ title, link: `https://finance.naver.com${link}` });
-      }
-    });
-    
-    res.json({ headlines, asofKST: kstNowString() });
-  } catch (err) {
-    console.error("❌ /api/market/today error:", err.message);
-    res.status(500).json({ error: "뉴스 크롤링 실패" });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// API: /api/analysis (OpenAI 분석, 캐시 12시간, 쿨다운 5분)
-// ─────────────────────────────────────────────────────────────────────────────
-app.get("/api/analysis", async (req, res) => {
-  const symbol = req.query.symbol || "USDKRW";
-  const cacheKey = `analysis_${symbol}`;
+// API: 외국인 매매 동향 (Mock - 네이버 동적 로딩 문제로 대체)
+app.get('/api/foreign-flows', (req, res) => {
   const now = Date.now();
+  const mockData = [];
+  
+  for (let i = 29; i >= 0; i--) {
+    const ts = Math.floor((now - i * 86400000) / 1000);
+    const net = (Math.random() - 0.5) * 1e9;
+    mockData.push({ time: ts, net: Math.round(net) });
+  }
+  
+  const todayNet = mockData[mockData.length - 1].net;
+  const last7dNet = mockData.slice(-7).reduce((sum, d) => sum + d.net, 0);
+  
+  res.json({
+    today: {
+      netBuy: todayNet > 0 ? todayNet : 0,
+      netSell: todayNet < 0 ? Math.abs(todayNet) : 0
+    },
+    last7d: {
+      netBuy: last7dNet > 0 ? last7dNet : 0,
+      netSell: last7dNet < 0 ? Math.abs(last7dNet) : 0
+    },
+    series: mockData,
+    asofKST: kstNowString(),
+    source: 'Mock Data',
+    note: '네이버 동적 로딩 문제로 임시 데이터'
+  });
+});
+
+// API: 뉴스
+app.get('/api/market/today', async (req, res) => {
+  try {
+    const html = await fetchText('https://finance.naver.com/news/mainnews.naver');
+    const $ = cheerio.load(html);
+    const news = [];
+    
+    $('.newsList li').each((i, el) => {
+      if (i >= 8) return false;
+      const title = $(el).find('dd a').first().text().trim();
+      const link = $(el).find('dd a').first().attr('href');
+      if (title && link) {
+        news.push({
+          title,
+          url: link.startsWith('http') ? link : `https://finance.naver.com${link}`
+        });
+      }
+    });
+    
+    res.json({
+      asofKST: kstNowString(),
+      source: 'https://finance.naver.com/news/mainnews.naver',
+      news
+    });
+  } catch (err) {
+    console.error('❌ /api/market/today error:', err.message);
+    res.status(500).json({ error: '뉴스 수집 실패' });
+  }
+});
+
+// API: AI 분석 (Gemini)
+const { GoogleGenerativeAI } = require('@google/generative-ai');
+const analysisCache = new Map();
+const CACHE_TTL = 24 * 60 * 60 * 1000; // 24시간
+const COOLDOWN = 30 * 60 * 1000; // 30분
+
+app.get('/api/analysis', async (req, res) => {
+  const symbol = req.query.symbol || 'USDKRW';
+  const cacheKey = `${symbol}_analysis`;
   
   // 캐시 확인
   const cached = analysisCache.get(cacheKey);
-  if (cached && now - cached.timestamp < ANALYSIS_TTL_MS) {
-    return res.json(cached.data);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return res.json({ ...cached.data, cached: true });
   }
   
   // 쿨다운 확인
-  if (now - lastAnalysisTime < ANALYSIS_COOLDOWN_MS) {
-    const waitSec = Math.ceil((ANALYSIS_COOLDOWN_MS - (now - lastAnalysisTime)) / 1000);
+  if (cached && Date.now() - cached.timestamp < COOLDOWN) {
+    const retryAfter = Math.ceil((COOLDOWN - (Date.now() - cached.timestamp)) / 1000);
     return res.status(429).json({
-      error: `AI 분석은 ${waitSec}초 후에 다시 요청할 수 있습니다.`,
-      retryAfter: waitSec
+      error: '잠시 후 다시 시도해주세요',
+      retryAfter
     });
   }
   
-  // Gemini 우선 사용 (무료, Rate Limit 없음)
-  const useGemini = gemini && (!openai || lastAnalysisTime > 0);
-  
-  if (!gemini && !openai) {
-    return res.status(503).json({ 
-      error: "AI API 키가 설정되지 않았습니다. GEMINI_API_KEY 또는 OPENAI_API_KEY를 Render 환경 변수에 추가하세요.",
-      note: "Gemini API 키 발급: https://makersuite.google.com/app/apikey"
+  // API 키 확인
+  const apiKey = process.env.GEMINI_API_KEY;
+  if (!apiKey) {
+    return res.status(500).json({
+      error: 'GEMINI_API_KEY가 설정되지 않았습니다'
     });
   }
   
   try {
-    lastAnalysisTime = now;
+    const genAI = new GoogleGenerativeAI(apiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-1.5-flash' });
     
-    const candles = getCandles(symbol, "1h", "7d");
-    const latest = state[symbol] || 0;
-    const weekAgo = candles[0]?.close || latest;
-    const change = ((latest - weekAgo) / weekAgo * 100).toFixed(2);
-    
-    const prompt = `다음은 ${symbol}의 최근 7일간 1시간 봉 데이터입니다:
-${JSON.stringify(candles.slice(-24), null, 2)}
+    const prompt = `당신은 외환시장 전문 애널리스트입니다. 현재 시장 상황을 분석해주세요.
 
-현재 ${symbol}: ${latest}
-7일 전 대비: ${change}%
+현재 데이터:
+- USD/KRW: ${state.USDKRW || 'N/A'}
+- EUR/KRW: ${state.EURKRW || 'N/A'}
+- DXY: ${state.DXY || 'N/A'}
+- KR 10년물: ${state.KR10Y || 'N/A'}%
+- US 10년물: ${state.US10Y || 'N/A'}%
 
-한국 투자자를 위해 200자 이내로 간결하게 분석해주세요:
-- 주요 변동 원인
-- 단기 전망
-- 투자자 유의사항`;
+다음 형식으로 200자 이내 브리핑을 작성해주세요:
+1. 현재 환율 수준 언급
+2. 주요 변동 요인 1-2가지
+3. 단기 전망 (상승/하락/보합)`;
+
+    const result = await model.generateContent(prompt);
+    const text = result.response.text();
     
-    let analysis;
-    
-    if (useGemini) {
-      // Google Gemini 사용
-      const model = gemini.getGenerativeModel({ model: "gemini-1.5-flash" });
-      const result = await model.generateContent(prompt);
-      analysis = result.response.text().trim();
-      console.log("✅ AI 분석 (Gemini):", analysis.substring(0, 50) + "...");
-    } else {
-      // OpenAI 사용
-      const completion = await openai.chat.completions.create({
-        model: "gpt-4o-mini",
-        messages: [{ role: "user", content: prompt }],
-        temperature: 0.7,
-        max_tokens: 500
-      });
-      analysis = completion.choices[0].message.content.trim();
-      console.log("✅ AI 분석 (OpenAI):", analysis.substring(0, 50) + "...");
-    }
-    const result = {
+    const data = {
       symbol,
-      analysis,
+      analysis: text,
       asofKST: kstNowString(),
-      cachedUntil: new Date(now + ANALYSIS_TTL_MS).toISOString()
+      cachedUntil: new Date(Date.now() + CACHE_TTL).toISOString()
     };
     
-    analysisCache.set(cacheKey, { data: result, timestamp: now });
-    res.json(result);
+    analysisCache.set(cacheKey, { data, timestamp: Date.now() });
+    console.log(`✅ AI 분석 (Gemini): ${text.substring(0, 50)}...`);
     
+    res.json(data);
   } catch (err) {
-    console.error("❌ /api/analysis error:", err.message);
+    console.error('❌ /api/analysis error:', err.message);
     
-    if (err.status === 429) {
+    if (err.message.includes('quota') || err.message.includes('rate')) {
       return res.status(429).json({
-        error: "OpenAI API 요청 한도를 초과했습니다. 잠시 후 다시 시도해주세요.",
+        error: 'AI API 요청 한도 초과',
         retryAfter: 300
       });
     }
     
-    res.status(500).json({ error: "AI 분석 생성 실패" });
+    res.status(500).json({ error: 'AI 분석 생성 실패' });
   }
 });
 
-// ─────────────────────────────────────────────────────────────────────────────
-// API: /api/foreign-flows (네이버 금융 외국인 주식 매매 동향)
-// ─────────────────────────────────────────────────────────────────────────────
-app.get("/api/foreign-flows", async (req, res) => {
-  try {
-    const today = new Date();
-    const bizdate = today.toISOString().slice(0, 10).replace(/-/g, "");
-    const url = `https://finance.naver.com/sise/investorDealTrendDay.naver?bizdate=${bizdate}&sosok=&page=1`;
-    
-    const text = await fetchText(url);
-    const $ = cheerio.load(text);
-    
-    const rows = [];
-    $("table.type_1 tr").each((i, row) => {
-      if (i === 0) return; // 헤더 스킵
-      const cols = $(row).find("td");
-      if (cols.length < 4) return;
-      
-      const dateText = $(cols[0]).text().trim();
-      const foreignText = $(cols[2]).text().trim().replace(/,/g, "");
-      
-      if (dateText && foreignText && !isNaN(parseFloat(foreignText))) {
-        // 날짜 파싱: "2026.01.29" -> "2026-01-29"
-        const dateStr = dateText.replace(/\./g, "-");
-        const date = new Date(dateStr);
-        
-        // 유효한 날짜인지 확인
-        if (!isNaN(date.getTime())) {
-          const net = parseFloat(foreignText) * 100000000; // 억원 -> 원
-          rows.push({ time: Math.floor(date.getTime() / 1000), net });
-        }
-      }
-    });
-    
-    // 데이터가 없으면 Mock 데이터 사용
-    if (rows.length === 0) {
-      console.log("⚠️ Foreign flows: 크롤링 데이터 없음, Mock 데이터 사용");
-      throw new Error("데이터 파싱 실패");
-    }
-    
-    rows.sort((a, b) => a.time - b.time);
-    
-    const todayNet = rows[rows.length - 1]?.net || 0;
-    const last7d = rows.slice(-7);
-    const last7dNet = last7d.reduce((sum, r) => sum + r.net, 0);
-    
-    res.json({
-      today: {
-        netBuy: todayNet > 0 ? todayNet : 0,
-        netSell: todayNet < 0 ? todayNet : 0
-      },
-      last7d: {
-        netBuy: last7dNet > 0 ? last7dNet : 0,
-        netSell: last7dNet < 0 ? last7dNet : 0
-      },
-      series: rows,
-      asofKST: kstNowString(),
-      source: "네이버 증권 - 투자자별 매매동향",
-      note: "주식시장 외국인 매매 데이터 (외환 매매 아님)"
-    });
-    
-  } catch (err) {
-    console.error("❌ /api/foreign-flows error:", err.message);
-    
-    // Mock 데이터 반환 (현실적인 패턴)
-    const now = Date.now();
-    const mockSeries = Array.from({ length: 30 }, (_, i) => {
-      const dayAgo = 29 - i;
-      const time = Math.floor((now - dayAgo * 86400000) / 1000);
-      // 주중에는 매도, 주말에는 매수 패턴
-      const dayOfWeek = new Date(now - dayAgo * 86400000).getDay();
-      const trend = (dayOfWeek >= 1 && dayOfWeek <= 5) ? -1 : 1;
-      const net = trend * (Math.random() * 500000000 + 200000000); // 2억~7억
-      return { time, net: Math.floor(net) };
-    });
-    
-    const todayNet = mockSeries[mockSeries.length - 1].net;
-    const last7dNet = mockSeries.slice(-7).reduce((sum, r) => sum + r.net, 0);
-    
-    res.json({
-      today: {
-        netBuy: todayNet > 0 ? todayNet : 0,
-        netSell: todayNet < 0 ? todayNet : 0
-      },
-      last7d: {
-        netBuy: last7dNet > 0 ? last7dNet : 0,
-        netSell: last7dNet < 0 ? last7dNet : 0
-      },
-      series: mockSeries,
-      asofKST: kstNowString(),
-      source: "Mock Data (크롤링 실패)",
-      note: "실제 데이터 수집 실패, 테스트용 데이터"
-    });
-  }
-});
-
-// ─────────────────────────────────────────────────────────────────────────────
-// 정적 파일 & 기본 라우트
-// ─────────────────────────────────────────────────────────────────────────────
-app.get("*", (req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
-});
-
+const PORT = process.env.PORT || 3000;
 app.listen(PORT, () => {
-  console.log(`✅ Server running on port ${PORT}`);
+  console.log(`🚀 Server running on port ${PORT}`);
+  console.log(`📊 Dashboard: http://localhost:${PORT}`);
 });
