@@ -4,212 +4,158 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FX Dashboard</title>
-  <link rel="manifest" href="/manifest.webmanifest">
-  <link rel="icon" type="image/png" href="/icons/icon-192.png">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Roboto", sans-serif;
-      background: #1a1d2e;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #0f1729;
       color: #e2e8f0;
       padding: 20px;
-      line-height: 1.6;
     }
-    .container {
-      max-width: 1600px;
-      margin: 0 auto;
-    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    
     header {
       display: flex;
       justify-content: space-between;
       align-items: center;
-      margin-bottom: 30px;
-      flex-wrap: wrap;
+      margin-bottom: 20px;
+    }
+    h1 { font-size: 1.3rem; color: #fff; }
+    .header-right {
+      display: flex;
       gap: 15px;
-    }
-    h1 {
-      font-size: 1.5rem;
-      font-weight: 600;
-      color: #fff;
-    }
-    .header-info {
-      display: flex;
-      gap: 20px;
       align-items: center;
-      flex-wrap: wrap;
-    }
-    .status-badge {
-      padding: 6px 12px;
-      background: #10b981;
-      border-radius: 6px;
       font-size: 0.85rem;
+    }
+    .status { 
+      background: #10b981; 
+      padding: 5px 12px; 
+      border-radius: 5px; 
       font-weight: 600;
     }
-    .asof {
-      font-size: 0.85rem;
-      color: #94a3b8;
-    }
-    .grid {
-      display: grid;
-      gap: 20px;
-      grid-template-columns: repeat(auto-fit, minmax(350px, 1fr));
-    }
-    .full-width {
-      grid-column: 1 / -1;
-    }
-    .card {
-      background: #252a3d;
-      border-radius: 12px;
-      padding: 20px;
-      border: 1px solid #2d3548;
-    }
-    .card-header {
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      margin-bottom: 16px;
-      flex-wrap: wrap;
-      gap: 10px;
-    }
-    .card-title {
-      font-size: 1rem;
-      font-weight: 600;
-      color: #fff;
-    }
-    .card-subtitle {
-      font-size: 0.8rem;
-      color: #64748b;
-      display: flex;
-      gap: 8px;
-      align-items: center;
-    }
-    .badge {
-      padding: 4px 10px;
-      background: #334155;
-      border-radius: 4px;
-      font-size: 0.75rem;
-    }
+    .asof { color: #94a3b8; }
     .link {
       color: #60a5fa;
       text-decoration: none;
-      font-size: 0.8rem;
     }
-    .link:hover {
-      text-decoration: underline;
+    .link:hover { text-decoration: underline; }
+    
+    .layout {
+      display: grid;
+      grid-template-columns: 1fr 1fr;
+      gap: 20px;
     }
+    
+    .card {
+      background: #1a2235;
+      border-radius: 8px;
+      padding: 20px;
+      border: 1px solid #2d3748;
+    }
+    
+    .card-title {
+      font-size: 0.9rem;
+      font-weight: 600;
+      margin-bottom: 12px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+    
+    .badge {
+      background: #374151;
+      padding: 3px 8px;
+      border-radius: 4px;
+      font-size: 0.75rem;
+      color: #9ca3af;
+      margin-left: 8px;
+    }
+    
+    .chart-container {
+      margin-top: 15px;
+    }
+    
     .kpi-grid {
       display: grid;
       grid-template-columns: repeat(3, 1fr);
-      gap: 16px;
-      margin-bottom: 20px;
+      gap: 15px;
+      margin-top: 15px;
     }
+    
     .kpi-item {
-      padding: 16px;
-      background: #1e2332;
-      border-radius: 8px;
-      border: 1px solid #2d3548;
+      background: #0f1729;
+      padding: 12px;
+      border-radius: 6px;
+      border: 1px solid #2d3748;
     }
+    
     .kpi-label {
-      font-size: 0.85rem;
+      font-size: 0.75rem;
       color: #94a3b8;
-      margin-bottom: 8px;
+      margin-bottom: 5px;
     }
+    
     .kpi-value {
-      font-size: 1.5rem;
-      font-weight: 700;
+      font-size: 1.3rem;
+      font-weight: 600;
       color: #fff;
     }
-    .kpi-note {
+    
+    .note {
       font-size: 0.75rem;
       color: #64748b;
-      margin-top: 4px;
+      margin-top: 10px;
     }
-    .chart-container {
-      width: 100%;
-      height: 300px;
-      margin-top: 12px;
+    
+    .news-list {
+      list-style: none;
+      margin-top: 10px;
     }
-    .btn {
-      padding: 8px 16px;
+    
+    .news-list li {
+      padding: 8px 0;
+      border-bottom: 1px solid #2d3748;
+    }
+    
+    .news-list li:last-child { border-bottom: none; }
+    
+    .news-list a {
+      color: #e2e8f0;
+      text-decoration: none;
+      font-size: 0.85rem;
+    }
+    
+    .news-list a:hover {
+      color: #60a5fa;
+    }
+    
+    .ai-section {
+      margin-top: 20px;
+      padding: 15px;
+      background: #0f1729;
+      border-radius: 6px;
+      border: 1px solid #2d3748;
+    }
+    
+    .ai-button {
       background: #3b82f6;
       color: white;
       border: none;
-      border-radius: 6px;
+      padding: 8px 16px;
+      border-radius: 5px;
       cursor: pointer;
       font-size: 0.85rem;
-      font-weight: 500;
-      transition: background 0.2s;
+      margin-bottom: 10px;
     }
-    .btn:hover {
+    
+    .ai-button:hover {
       background: #2563eb;
     }
-    .btn:disabled {
-      background: #4b5563;
-      cursor: not-allowed;
-    }
-    .report-content {
-      padding: 20px;
-      background: #1e2332;
-      border-radius: 8px;
-      line-height: 1.8;
-      font-size: 0.95rem;
-    }
-    .loading {
-      text-align: center;
-      color: #94a3b8;
-      padding: 40px;
-    }
-    .note {
-      margin-top: 12px;
-      padding: 12px;
-      background: #1e2332;
-      border-radius: 6px;
-      border-left: 3px solid #3b82f6;
-      font-size: 0.85rem;
-      color: #94a3b8;
-    }
-    .news-list {
-      list-style: none;
-    }
-    .news-item {
-      padding: 12px 0;
-      border-bottom: 1px solid #2d3548;
-    }
-    .news-item:last-child {
-      border-bottom: none;
-    }
-    .news-item a {
-      color: #e2e8f0;
-      text-decoration: none;
+    
+    .ai-content {
       font-size: 0.9rem;
       line-height: 1.6;
-      display: block;
-    }
-    .news-item a:hover {
-      color: #60a5fa;
-    }
-    footer {
-      text-align: center;
-      margin-top: 40px;
-      font-size: 0.85rem;
-      color: #64748b;
-    }
-    footer code {
-      background: #252a3d;
-      padding: 2px 6px;
-      border-radius: 4px;
-      font-size: 0.8rem;
-    }
-    @media (max-width: 768px) {
-      .grid {
-        grid-template-columns: 1fr;
-      }
-      .kpi-grid {
-        grid-template-columns: repeat(2, 1fr);
-      }
-      .chart-container {
-        height: 250px;
-      }
+      color: #cbd5e1;
     }
   </style>
 </head>
@@ -217,258 +163,230 @@
   <div class="container">
     <header>
       <h1>FX Dashboard</h1>
-      <div class="header-info">
-        <div class="status-badge">🟢 STATUS</div>
-        <div class="asof" id="asof-header">로딩 중...</div>
-        <a href="/api/latest" class="link" target="_blank">API</a>
+      <div class="header-right">
+        <span class="status">● STATUS</span>
+        <span class="asof" id="header-asof">--</span>
+        <a href="/api/latest" class="link" target="_blank">API /api/latest</a>
       </div>
     </header>
-
-    <!-- USD/KRW 차트 -->
-    <div class="card">
-      <div class="card-header">
-        <div class="card-title">USD/KRW</div>
-        <div class="card-subtitle">
-          <span class="badge">1m</span>
-          <span class="badge">24h</span>
-          <a href="/api/candles?symbol=USDKRW&interval=1m&range=24h" class="link" target="_blank">candles</a>
+    
+    <div class="layout">
+      <!-- 왼쪽 영역 -->
+      <div>
+        <!-- USD/KRW 차트 -->
+        <div class="card">
+          <div class="card-title">
+            <span>USD/KRW <span class="badge">1m 24h</span></span>
+            <span class="badge">candles</span>
+          </div>
+          <div class="chart-container" id="chart-usdkrw" style="height: 300px;"></div>
         </div>
-      </div>
-      <div class="chart-container" id="chart-usdkrw"></div>
-    </div>
-
-    <!-- KPI 그리드 -->
-    <div class="card full-width">
-      <div class="kpi-grid">
-        <div class="kpi-item">
-          <div class="kpi-label">USD/KRW</div>
-          <div class="kpi-value" id="kpi-usdkrw">-</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-label">EUR/KRW</div>
-          <div class="kpi-value" id="kpi-eurkrw">-</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-label">DXY</div>
-          <div class="kpi-value" id="kpi-dxy">-</div>
-          <div class="kpi-note">NAVER (DXY)</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-label">KR10Y</div>
-          <div class="kpi-value" id="kpi-kr10y">-</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-label">US10Y</div>
-          <div class="kpi-value" id="kpi-us10y">-</div>
-        </div>
-        <div class="kpi-item">
-          <div class="kpi-label">Spread (USKR 10Y)</div>
-          <div class="kpi-value" id="kpi-spread">-</div>
-          <div class="kpi-note">US10Y - KR10Y</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="grid">
-      <!-- DXY 차트 -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">DXY</div>
-          <div class="card-subtitle">
-            <span class="badge">line</span>
-            <span class="badge">5m</span>
-            <span class="badge">3d</span>
-            <a href="/api/candles?symbol=DXY&interval=5m&range=3d" class="link" target="_blank">candles</a>
+        
+        <!-- KPI 스냅샷 -->
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">KPI Snapshot <span class="asof" id="kpi-asof">--</span></div>
+          <div class="kpi-grid">
+            <div class="kpi-item">
+              <div class="kpi-label">USD/KRW</div>
+              <div class="kpi-value" id="kpi-usd">-</div>
+            </div>
+            <div class="kpi-item">
+              <div class="kpi-label">EUR/KRW</div>
+              <div class="kpi-value" id="kpi-eur">-</div>
+            </div>
+            <div class="kpi-item">
+              <div class="kpi-label">DXY</div>
+              <div class="kpi-value" id="kpi-dxy">-</div>
+            </div>
+            <div class="kpi-item">
+              <div class="kpi-label">KR10Y</div>
+              <div class="kpi-value" id="kpi-kr10y">-</div>
+            </div>
+            <div class="kpi-item">
+              <div class="kpi-label">US10Y</div>
+              <div class="kpi-value" id="kpi-us10y">-</div>
+            </div>
+            <div class="kpi-item">
+              <div class="kpi-label">10Y Spread</div>
+              <div class="kpi-value" id="kpi-spread">- pp</div>
+              <div class="note">US10Y - KR10Y</div>
+            </div>
           </div>
         </div>
-        <div class="chart-container" id="chart-dxy"></div>
+        
+        <!-- DXY 차트 -->
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">
+            <span>DXY <span class="badge">line</span></span>
+            <span class="badge">5m 3d</span>
+          </div>
+          <div class="chart-container" id="chart-dxy" style="height: 250px;"></div>
+        </div>
+        
+        <!-- KR10Y 차트 -->
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">
+            <span>KR10Y <span class="badge">line</span></span>
+            <span class="badge">5m 7d</span>
+          </div>
+          <div class="chart-container" id="chart-kr10y" style="height: 250px;"></div>
+        </div>
       </div>
-
-      <!-- KR10Y 차트 -->
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title">KR10Y</div>
-          <div class="card-subtitle">
-            <span class="badge">line</span>
-            <span class="badge">5m</span>
-            <span class="badge">7d</span>
-            <a href="/api/candles?symbol=KR10Y&interval=5m&range=7d" class="link" target="_blank">candles</a>
+      
+      <!-- 오른쪽 영역 -->
+      <div>
+        <!-- Market Brief -->
+        <div class="card">
+          <div class="card-title">
+            <span>Market Brief <span class="badge">noCLI</span></span>
+            <a href="/api/market/today" class="link" target="_blank">/api/market/today</a>
+          </div>
+          <ul class="news-list" id="news-list">
+            <li>뉴스 로딩 중...</li>
+          </ul>
+        </div>
+        
+        <!-- AI 분석 -->
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">
+            <span>시황 (AI) <a href="/api/analysis" class="link" target="_blank">/api/analysis</a></span>
+          </div>
+          <div class="ai-section">
+            <button class="ai-button" onclick="loadAIAnalysis()">🤖 AI 분석 요청</button>
+            <div class="ai-content" id="ai-content">
+              AI 분석을 보려면 위의 "🤖 AI 분석 요청" 버튼을 클릭하세요
+            </div>
           </div>
         </div>
-        <div class="chart-container" id="chart-kr10y"></div>
-      </div>
-    </div>
-
-    <!-- 오늘의 뉴스 -->
-    <div class="card full-width">
-      <div class="card-header">
-        <div class="card-title">오늘의 시장 뉴스</div>
-        <div class="card-subtitle">
-          <a href="/api/market/today" class="link" target="_blank">/api/market/today</a>
+        
+        <!-- 외화보유액 -->
+        <div class="card" style="margin-top: 20px;">
+          <div class="card-title">
+            <span>외화보유액 <span class="badge">Line</span></span>
+            <span class="badge">Auto-scale</span>
+          </div>
+          <div class="chart-container" id="chart-reserves" style="height: 300px;"></div>
+          <div class="note">단위: USD bn · 출처: BOK press release (public/data/reserves.json)</div>
         </div>
       </div>
-      <div id="news-content" class="loading">로딩 중...</div>
     </div>
-
-    <!-- AI 분석 -->
-    <div class="card full-width">
-      <div class="card-header">
-        <div class="card-title">시황 (AI)</div>
-        <div style="display: flex; gap: 10px; align-items: center;">
-          <a href="/api/analysis" class="link" target="_blank">/api/analysis</a>
-          <button class="btn" id="btn-analysis" onclick="loadReport()">🤖 AI 분석 요청</button>
-        </div>
-      </div>
-      <div class="report-content" id="report-content">
-        <div class="loading">💡 AI 분석을 보려면 위의 "🤖 AI 분석 요청" 버튼을 클릭하세요.</div>
-      </div>
-    </div>
-
-    <!-- 외화보유액 -->
-    <div class="card full-width">
-      <div class="card-header">
-        <div class="card-title">외화보유액</div>
-        <div class="card-subtitle">
-          <span class="badge">Line</span>
-          <span class="badge">Auto-scale</span>
-          <a href="/api/reserves" class="link" target="_blank">/api/reserves</a>
-        </div>
-      </div>
-      <div class="chart-container" id="chart-reserves" style="height: 350px;"></div>
-      <div class="note">
-        단위: USD bn · 출처: BOK press release (public/data/reserves.json)
-      </div>
-    </div>
-
-
-    <footer>
-      데이터: <code>/api/latest</code>, <code>/api/candles</code>, <code>/api/reserves</code>
-    </footer>
   </div>
-
+  
   <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
   <script>
-    // ─────────────────────────────────────────────────────────────────────────────
-    // 차트 객체
-    // ─────────────────────────────────────────────────────────────────────────────
     const charts = {};
     const series = {};
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // 차트 초기화
-    // ─────────────────────────────────────────────────────────────────────────────
-    function initCharts() {
-      const chartOptions = {
-        layout: { 
-          textColor: '#94a3b8', 
-          background: { color: '#1e2332' } 
-        },
-        grid: { 
-          vertLines: { color: '#2d3548' }, 
-          horzLines: { color: '#2d3548' } 
-        },
-        timeScale: { 
-          timeVisible: true, 
-          secondsVisible: false,
-          borderColor: '#2d3548'
-        },
-        crosshair: { 
-          mode: LightweightCharts.CrosshairMode.Normal 
-        },
-        rightPriceScale: {
-          borderColor: '#2d3548'
-        }
-      };
-
-      // USD/KRW
-      charts.usdkrw = LightweightCharts.createChart(
-        document.getElementById('chart-usdkrw'), 
-        { ...chartOptions, height: 300 }
-      );
-      series.usdkrw = charts.usdkrw.addLineSeries({ 
-        color: '#3b82f6', 
-        lineWidth: 2 
-      });
-
-      // DXY
-      charts.dxy = LightweightCharts.createChart(
-        document.getElementById('chart-dxy'), 
-        { ...chartOptions, height: 300 }
-      );
-      series.dxy = charts.dxy.addLineSeries({ 
-        color: '#10b981', 
-        lineWidth: 2 
-      });
-
-      // KR10Y
-      charts.kr10y = LightweightCharts.createChart(
-        document.getElementById('chart-kr10y'), 
-        { ...chartOptions, height: 300 }
-      );
-      series.kr10y = charts.kr10y.addLineSeries({ 
-        color: '#ef4444', 
-        lineWidth: 2 
-      });
-
-      // Reserves
-      charts.reserves = LightweightCharts.createChart(
-        document.getElementById('chart-reserves'), 
-        { ...chartOptions, height: 350 }
-      );
-      series.reserves = charts.reserves.addLineSeries({ 
-        color: '#8b5cf6', 
-        lineWidth: 3 
-      });
-
-      // Foreign
-      charts.foreign = LightweightCharts.createChart(
-        { ...chartOptions, height: 350 }
-      );
-        color: '#ec4899', 
-        lineWidth: 2 
-      });
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────────
+    
+    const chartOptions = {
+      layout: { 
+        background: { color: '#1a2235' },
+        textColor: '#94a3b8'
+      },
+      grid: {
+        vertLines: { color: '#2d3748' },
+        horzLines: { color: '#2d3748' }
+      },
+      timeScale: { borderColor: '#2d3748' },
+      rightPriceScale: { borderColor: '#2d3748' }
+    };
+    
+    // USD/KRW
+    charts.usdkrw = LightweightCharts.createChart(
+      document.getElementById('chart-usdkrw'), 
+      { ...chartOptions, height: 300 }
+    );
+    series.usdkrw = charts.usdkrw.addLineSeries({ 
+      color: '#3b82f6', 
+      lineWidth: 2 
+    });
+    
+    // DXY
+    charts.dxy = LightweightCharts.createChart(
+      document.getElementById('chart-dxy'), 
+      { ...chartOptions, height: 250 }
+    );
+    series.dxy = charts.dxy.addLineSeries({ 
+      color: '#10b981', 
+      lineWidth: 2 
+    });
+    
+    // KR10Y
+    charts.kr10y = LightweightCharts.createChart(
+      document.getElementById('chart-kr10y'), 
+      { ...chartOptions, height: 250 }
+    );
+    series.kr10y = charts.kr10y.addLineSeries({ 
+      color: '#ef4444', 
+      lineWidth: 2 
+    });
+    
+    // Reserves
+    charts.reserves = LightweightCharts.createChart(
+      document.getElementById('chart-reserves'), 
+      { ...chartOptions, height: 300 }
+    );
+    series.reserves = charts.reserves.addLineSeries({ 
+      color: '#10b981', 
+      lineWidth: 3 
+    });
+    
     // 데이터 로딩
-    // ─────────────────────────────────────────────────────────────────────────────
+    async function loadCandles(symbol, interval, range, chartSeries) {
+      try {
+        const res = await fetch(`/api/candles?symbol=${symbol}&interval=${interval}&range=${range}`);
+        const data = await res.json();
+        if (data.data && data.data.length > 0) {
+          chartSeries.setData(data.data);
+        }
+      } catch (err) {
+        console.error(`❌ loadCandles ${symbol} error:`, err);
+      }
+    }
+    
     async function loadLatest() {
       try {
         const res = await fetch('/api/latest');
         const data = await res.json();
         
-        document.getElementById('kpi-usdkrw').textContent = data.USDKRW || '-';
-        document.getElementById('kpi-eurkrw').textContent = data.EURKRW || '-';
+        document.getElementById('header-asof').textContent = data.asofKST;
+        document.getElementById('kpi-asof').textContent = data.asofKST;
+        
+        document.getElementById('kpi-usd').textContent = data.USDKRW ? data.USDKRW.toFixed(2) : '-';
+        document.getElementById('kpi-eur').textContent = data.EURKRW ? data.EURKRW.toFixed(2) : '-';
         document.getElementById('kpi-dxy').textContent = data.DXY || '-';
-        document.getElementById('kpi-kr10y').textContent = data.KR10Y || '-';
-        document.getElementById('kpi-us10y').textContent = data.US10Y || '-';
-        document.getElementById('kpi-spread').textContent = data.spread10y || '-';
-        document.getElementById('asof-header').textContent = data.asofKST || '-';
+        document.getElementById('kpi-kr10y').textContent = data.KR10Y ? data.KR10Y.toFixed(2) + '%' : '-';
+        document.getElementById('kpi-us10y').textContent = data.US10Y ? data.US10Y.toFixed(2) + '%' : '-';
+        document.getElementById('kpi-spread').textContent = data.spread10y ? data.spread10y.toFixed(2) + ' pp' : '- pp';
       } catch (err) {
         console.error('❌ loadLatest error:', err);
-        document.getElementById('asof-header').textContent = '데이터 로딩 실패';
       }
     }
-
-    async function loadCandles(symbol, interval, range, seriesObj) {
+    
+    async function loadNews() {
       try {
-        const res = await fetch(`/api/candles?symbol=${symbol}&interval=${interval}&range=${range}`);
+        const res = await fetch('/api/market/today');
         const data = await res.json();
-        seriesObj.setData(data.candles);
+        
+        if (data.news && data.news.length > 0) {
+          const html = data.news.map(n => 
+            `<li><a href="${n.url}" target="_blank">${n.title}</a></li>`
+          ).join('');
+          document.getElementById('news-list').innerHTML = html;
+        }
       } catch (err) {
-        console.error(`❌ loadCandles ${symbol} error:`, err);
+        console.error('❌ loadNews error:', err);
+        document.getElementById('news-list').innerHTML = '<li>뉴스 로딩 실패</li>';
       }
     }
-
+    
     async function loadReserves() {
       try {
         const res = await fetch('/api/reserves');
         const data = await res.json();
         
-        // reserves.json 형식: {series: [{month: "2025-08", value: 420.1}]}
-        if (data.series && Array.isArray(data.series)) {
+        if (data.series && data.series.length > 0) {
           const chartData = data.series.map(d => ({
-            time: d.month, // "YYYY-MM" 형식
+            time: d.month,
             value: d.value
           }));
           series.reserves.setData(chartData);
@@ -477,94 +395,50 @@
         console.error('❌ loadReserves error:', err);
       }
     }
-
-
-    async function loadNews() {
-      try {
-        const res = await fetch('/api/market/today');
-        const data = await res.json();
-        
-        if (data.headlines && data.headlines.length > 0) {
-          const newsHtml = '<ul class="news-list">' + 
-            data.headlines.map(item => 
-              `<li class="news-item"><a href="${item.link}" target="_blank">📰 ${item.title}</a></li>`
-            ).join('') + 
-            '</ul>';
-          document.getElementById('news-content').innerHTML = newsHtml;
-        } else {
-          document.getElementById('news-content').innerHTML = '<div class="loading">뉴스를 불러올 수 없습니다.</div>';
-        }
-      } catch (err) {
-        console.error('❌ loadNews error:', err);
-        document.getElementById('news-content').innerHTML = '<div class="loading">뉴스 로딩 실패</div>';
-      }
-    }
-
-    async function loadReport() {
-      const btn = document.getElementById('btn-analysis');
-      const content = document.getElementById('report-content');
+    
+    async function loadAIAnalysis() {
+      const btn = document.querySelector('.ai-button');
+      const content = document.getElementById('ai-content');
       
       btn.disabled = true;
-      content.innerHTML = '<div class="loading">⏳ AI 분석 생성 중...</div>';
+      btn.textContent = '⏳ 분석 중...';
+      content.textContent = 'AI가 시장을 분석하고 있습니다...';
       
       try {
-        const res = await fetch('/api/analysis?symbol=USDKRW');
-        
-        if (res.status === 429) {
-          const data = await res.json();
-          content.innerHTML = `<div style="color: #ef4444;">${data.error}</div>`;
-          setTimeout(() => { btn.disabled = false; }, data.retryAfter * 1000);
-          return;
-        }
-        
-        if (!res.ok) throw new Error(`HTTP ${res.status}`);
-        
+        const res = await fetch('/api/analysis');
         const data = await res.json();
-        content.innerHTML = `
-          <div style="line-height: 1.8;">
-            ${data.analysis}
-          </div>
-          <div class="note" style="margin-top: 16px;">
-            <strong>분석 시각:</strong> ${data.asofKST}<br>
-            <strong>캐시 만료:</strong> ${new Date(data.cachedUntil).toLocaleString('ko-KR')}
-          </div>
-        `;
+        
+        if (data.analysis) {
+          content.textContent = data.analysis;
+          btn.textContent = '✅ 분석 완료';
+        } else if (data.error) {
+          content.textContent = `⚠️ ${data.error}`;
+          btn.textContent = '🤖 AI 분석 요청';
+          btn.disabled = false;
+        }
       } catch (err) {
-        console.error('❌ loadReport error:', err);
-        content.innerHTML = `<div style="color: #ef4444;">AI 분석을 불러올 수 없습니다: ${err.message}</div>`;
-      } finally {
+        console.error('❌ AI 분석 error:', err);
+        content.textContent = '⚠️ AI 분석 생성 실패';
+        btn.textContent = '🤖 AI 분석 요청';
         btn.disabled = false;
       }
     }
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // 전체 리로드
-    // ─────────────────────────────────────────────────────────────────────────────
-    async function fullReload() {
-      await loadLatest();
-      await Promise.all([
-        loadCandles('USDKRW', '1m', '24h', series.usdkrw),
-        loadCandles('DXY', '5m', '3d', series.dxy),
-        loadCandles('KR10Y', '5m', '7d', series.kr10y),
-        loadReserves(),
-        loadNews()
-      ]);
-    }
-
-    // ─────────────────────────────────────────────────────────────────────────────
-    // 초기화 & 주기적 갱신
-    // ─────────────────────────────────────────────────────────────────────────────
-    initCharts();
-    fullReload();
-    setInterval(loadLatest, 60000);
-    setInterval(fullReload, 300000);
-
-    // PWA
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('/sw.js').catch(err => {
-        console.log('Service worker registration failed:', err);
-      });
-    }
+    
+    // 초기 로딩
+    Promise.all([
+      loadLatest(),
+      loadNews(),
+      loadReserves(),
+      loadCandles('USDKRW', '1m', '24h', series.usdkrw),
+      loadCandles('DXY', '5m', '3d', series.dxy),
+      loadCandles('KR10Y', '5m', '7d', series.kr10y)
+    ]);
+    
+    // 1분마다 업데이트
+    setInterval(() => {
+      loadLatest();
+      loadCandles('USDKRW', '1m', '24h', series.usdkrw);
+    }, 60000);
   </script>
 </body>
 </html>
