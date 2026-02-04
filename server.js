@@ -1,4 +1,4 @@
-// 최종 완성 버전 - 모든 문제 해결
+// 최종 버전 - 네이버 DXY + Gemini 2.5 Flash
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -9,7 +9,6 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-// DB 초기화
 const db = new Database(':memory:');
 db.exec(`
   CREATE TABLE IF NOT EXISTS candles (
@@ -23,7 +22,6 @@ db.exec(`
   )
 `);
 
-// State
 const state = {
   USDKRW: null,
   EURKRW: null,
@@ -33,7 +31,6 @@ const state = {
   spread10y: null
 };
 
-// Fetch
 async function fetchText(url, timeout = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
@@ -42,7 +39,7 @@ async function fetchText(url, timeout = 10000) {
     const response = await fetch(url, {
       signal: controller.signal,
       headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml',
         'Accept-Language': 'ko-KR,ko;q=0.9'
       }
@@ -61,7 +58,6 @@ function kstNowString() {
   return kst.toISOString().replace('T', ' ').substring(0, 19) + ' KST';
 }
 
-// 네이버 환율
 async function crawlNaverFx() {
   try {
     const html = await fetchText('https://finance.naver.com/marketindex/');
@@ -88,32 +84,38 @@ async function crawlNaverFx() {
   }
 }
 
-// DXY - Yahoo Finance (안정적)
-async function crawlDXY() {
+async function crawlNaverDXY() {
   try {
-    const html = await fetchText('https://finance.yahoo.com/quote/DX-Y.NYB', 15000);
+    // 네이버 증권 국제 지수 페이지
+    const html = await fetchText('https://finance.naver.com/world/');
+    const $ = cheerio.load(html);
     
-    // Yahoo Finance에서 DXY 값 추출
-    // 예: "fin-streamer" data-symbol="DX-Y.NYB" data-field="regularMarketPrice" value="97.41"
-    const matches = html.match(/data-symbol="DX-Y\.NYB"[^>]*value="([\d.]+)"/);
-    
-    if (matches && matches[1]) {
-      const val = parseFloat(matches[1]);
-      if (!isNaN(val) && val > 50 && val < 150) {
-        state.DXY = parseFloat(val.toFixed(2));
-        console.log(`✅ DXY: ${state.DXY}`);
-        return true;
+    // DXY 찾기
+    let dxy = null;
+    $('.tb_type1 tr').each((i, row) => {
+      const name = $(row).find('th a').text().trim();
+      if (name.includes('달러인덱스') || name.includes('DXY')) {
+        const valueText = $(row).find('td').first().text().replace(/,/g, '').trim();
+        const val = parseFloat(valueText);
+        if (!isNaN(val) && val > 50 && val < 150) {
+          dxy = val;
+        }
       }
+    });
+    
+    if (dxy) {
+      state.DXY = parseFloat(dxy.toFixed(2));
+      console.log(`✅ DXY: ${state.DXY}`);
+      return true;
     }
     
     throw new Error('DXY 파싱 실패');
   } catch (err) {
-    console.error('❌ crawlDXY error:', err.message);
+    console.error('❌ crawlNaverDXY error:', err.message);
     return false;
   }
 }
 
-// 네이버 채권
 async function crawlNaverBond() {
   try {
     const html = await fetchText('https://finance.naver.com/marketindex/');
@@ -145,11 +147,10 @@ async function crawlNaverBond() {
   }
 }
 
-// 주기적 업데이트
 async function updateAll() {
   console.log('\n🔄 크롤링 시작:', kstNowString());
   await crawlNaverFx();
-  await crawlDXY();
+  await crawlNaverDXY();
   await crawlNaverBond();
   
   const ts = Math.floor(Date.now() / 1000);
@@ -178,7 +179,6 @@ async function updateAll() {
 updateAll();
 setInterval(updateAll, 60000);
 
-// API: 최신 데이터
 app.get('/api/latest', (req, res) => {
   res.json({
     asofKST: kstNowString(),
@@ -186,16 +186,10 @@ app.get('/api/latest', (req, res) => {
   });
 });
 
-// API: 캔들
 app.get('/api/candles', (req, res) => {
   const { symbol = 'USDKRW', interval = '1m', range = '24h' } = req.query;
   
-  const rangeMap = {
-    '24h': 86400,
-    '3d': 259200,
-    '7d': 604800
-  };
-  
+  const rangeMap = { '24h': 86400, '3d': 259200, '7d': 604800 };
   const seconds = rangeMap[range] || 86400;
   const since = Math.floor(Date.now() / 1000) - seconds;
   
@@ -207,14 +201,10 @@ app.get('/api/candles', (req, res) => {
     symbol,
     interval,
     range,
-    data: rows.map(r => ({
-      time: r.timestamp,
-      value: r.close
-    }))
+    data: rows.map(r => ({ time: r.timestamp, value: r.close }))
   });
 });
 
-// API: 외화보유액
 app.get('/api/reserves', (req, res) => {
   res.json({
     source: 'BOK press release',
@@ -230,7 +220,6 @@ app.get('/api/reserves', (req, res) => {
   });
 });
 
-// API: 뉴스
 app.get('/api/market/today', async (req, res) => {
   try {
     const html = await fetchText('https://finance.naver.com/news/mainnews.naver');
@@ -260,7 +249,6 @@ app.get('/api/market/today', async (req, res) => {
   }
 });
 
-// API: AI 분석
 const analysisCache = new Map();
 const CACHE_TTL = 24 * 60 * 60 * 1000;
 const COOLDOWN = 30 * 60 * 1000;
@@ -305,7 +293,7 @@ app.get('/api/analysis', async (req, res) => {
 3. 단기 전망`;
 
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-1.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
