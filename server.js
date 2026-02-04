@@ -146,37 +146,44 @@ async function crawlNaverBond() {
 }
 
 // ─────────────────────────────────────────────────────────────────────────────
-// 크롤링: Investing.com DXY (실패 시 Mock 데이터)
+// 크롤링: 네이버 DXY (달러인덱스)
 // ─────────────────────────────────────────────────────────────────────────────
-let dxyValue = 107.5;
-let dxyTrend = 0;
-
-async function crawlInvestingDXY() {
+async function crawlNaverDXY() {
   try {
-    const url = "https://www.investing.com/indices/usdollar";
+    const url = "https://m.stock.naver.com/marketindex/exchange/.DXY";
     const text = await fetchText(url);
     const $ = cheerio.load(text);
-    const dxyText = $("[data-test='instrument-price-last']").first().text().trim().replace(/,/g, "");
+    
+    // 현재가 파싱 (모바일 페이지)
+    let dxyText = "";
+    
+    // 여러 셀렉터 시도
+    $("*").each((i, el) => {
+      const text = $(el).text().trim();
+      // 97.40 같은 패턴 찾기 (90~110 범위)
+      if (/^(9[0-9]|1[0-1][0-9])\.\d{1,2}$/.test(text)) {
+        const val = parseFloat(text);
+        if (val >= 90 && val <= 110) {
+          dxyText = text;
+          return false; // 찾았으면 종료
+        }
+      }
+    });
+    
     const dxy = parseFloat(dxyText);
-    if (!isNaN(dxy) && dxy > 50 && dxy < 150) {
+    
+    if (!isNaN(dxy) && dxy > 90 && dxy < 110) {
       state.DXY = dxy;
-      dxyValue = dxy; // 기준값 업데이트
-      console.log("✅ DXY (크롤링):", dxy);
+      console.log("✅ DXY (네이버):", dxy);
       return dxy;
     }
+    
     throw new Error("DXY 파싱 실패");
   } catch (err) {
-    console.error("❌ crawlInvestingDXY error:", err.message);
-    
-    // Mock 데이터 생성 (랜덤 워크)
-    dxyTrend += (Math.random() - 0.5) * 0.3;
-    dxyTrend = Math.max(-2, Math.min(2, dxyTrend));
-    dxyValue = dxyValue + dxyTrend + (Math.random() - 0.5) * 0.5;
-    dxyValue = Math.max(95, Math.min(115, dxyValue)); // 95~115 범위 제한
-    
-    state.DXY = parseFloat(dxyValue.toFixed(2));
-    console.log("📊 DXY (Mock):", state.DXY);
-    return state.DXY;
+    console.error("❌ crawlNaverDXY error:", err.message);
+    state.errors.push("DXY 크롤링 실패");
+    // 실패하면 null 반환 (기존 값 유지)
+    return state.DXY || null;
   }
 }
 
@@ -228,7 +235,7 @@ async function collectData() {
   const [fx, bond, dxy] = await Promise.all([
     crawlNaverFx(),
     crawlNaverBond(),
-    crawlInvestingDXY()
+    crawlNaverDXY()
   ]);
   
   state.asofKST = kstNowString();
