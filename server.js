@@ -372,8 +372,11 @@ app.get("/api/analysis", async (req, res) => {
   // Gemini 우선 사용 (무료, Rate Limit 없음)
   const useGemini = gemini && (!openai || lastAnalysisTime > 0);
   
-  if (!useGemini && !openai) {
-    return res.status(503).json({ error: "AI API 키가 설정되지 않았습니다." });
+  if (!gemini && !openai) {
+    return res.status(503).json({ 
+      error: "AI API 키가 설정되지 않았습니다. GEMINI_API_KEY 또는 OPENAI_API_KEY를 Render 환경 변수에 추가하세요.",
+      note: "Gemini API 키 발급: https://makersuite.google.com/app/apikey"
+    });
   }
   
   try {
