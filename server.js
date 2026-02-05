@@ -1,4 +1,4 @@
-// 최종 완성 버전 - 메인 페이지 크롤링 (작동 확인됨)
+// 최종 완성 버전 - DXY 모바일 + UTF-8 인코딩
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -45,7 +45,11 @@ async function fetchText(url, timeout = 10000) {
       }
     });
     clearTimeout(timer);
-    return await response.text();
+    
+    // UTF-8 인코딩 명시
+    const buffer = await response.arrayBuffer();
+    const decoder = new TextDecoder('utf-8');
+    return decoder.decode(buffer);
   } catch (err) {
     clearTimeout(timer);
     throw err;
@@ -92,111 +96,118 @@ async function crawlNaverFx() {
         state.US10Y = value;
         console.log(`✅ US10Y: ${value}`);
       }
-      
-      // DXY
-      if (title.includes('달러인덱스') && !isNaN(value) && value > 50 && value < 150) {
-        state.DXY = parseFloat(value.toFixed(2));
-        console.log(`✅ DXY: ${state.DXY}`);
-      }
     });
     
+    // Spread 계산
     if (state.KR10Y && state.US10Y) {
-      state.spread10y = parseFloat((state.US10Y - state.KR10Y).toFixed(2));
+      state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
     }
     
-    return true;
   } catch (err) {
     console.error('❌ crawlNaverFx error:', err.message);
-    return false;
   }
 }
 
+// DXY는 모바일 페이지에서 크롤링
 async function crawlNaverDXY() {
   try {
-    // 메인 페이지에서 이미 가져왔으면 Skip
-    if (state.DXY) {
-      return true;
-    }
-    
-    // 백업: 모바일 페이지
     const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
-    const matches = html.match(/달러인덱스\*\*(\d{2,3}\.\d{2})\*\*/);
+    const $ = cheerio.load(html);
     
-    if (matches && matches[1]) {
-      const val = parseFloat(matches[1]);
-      if (!isNaN(val) && val > 50 && val < 150) {
-        state.DXY = parseFloat(val.toFixed(2));
-        console.log(`✅ DXY (모바일): ${state.DXY}`);
-        return true;
-      }
+    // DetailInfo_price__v_j1V 클래스에서 가격 추출
+    const priceText = $('strong.DetailInfo_price__v_j1V').text().trim();
+    const value = parseFloat(priceText);
+    
+    if (!isNaN(value) && value > 50 && value < 150) {
+      state.DXY = parseFloat(value.toFixed(2));
+      console.log(`✅ DXY: ${state.DXY}`);
+      return;
     }
     
-    throw new Error('DXY 파싱 실패');
+    console.error('❌ crawlNaverDXY: DXY 파싱 실패');
   } catch (err) {
     console.error('❌ crawlNaverDXY error:', err.message);
-    return false;
   }
 }
 
-async function updateAll() {
-  console.log('\n🔄 크롤링 시작:', kstNowString());
+function storeCandle(symbol, price) {
+  if (!price || isNaN(price)) return;
+  
+  const now = Date.now();
+  const minute = Math.floor(now / 60000) * 60000;
+  
+  const existing = db.prepare('SELECT * FROM candles WHERE symbol = ? AND timestamp = ?').get(symbol, minute);
+  
+  if (existing) {
+    db.prepare(`
+      UPDATE candles
+      SET high = MAX(high, ?), low = MIN(low, ?), close = ?
+      WHERE symbol = ? AND timestamp = ?
+    `).run(price, price, price, symbol, minute);
+  } else {
+    db.prepare(`
+      INSERT INTO candles (symbol, timestamp, open, high, low, close)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run(symbol, minute, price, price, price, price);
+  }
+}
+
+async function crawlLoop() {
+  console.log(`\n⏰ ${kstNowString()} 크롤링 시작`);
+  
   await crawlNaverFx();
   await crawlNaverDXY();
   
-  const ts = Math.floor(Date.now() / 1000);
-  if (state.USDKRW) {
-    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
-      'USDKRW', ts, state.USDKRW, state.USDKRW, state.USDKRW, state.USDKRW
-    );
-  }
-  if (state.EURKRW) {
-    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
-      'EURKRW', ts, state.EURKRW, state.EURKRW, state.EURKRW, state.EURKRW
-    );
-  }
-  if (state.DXY) {
-    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
-      'DXY', ts, state.DXY, state.DXY, state.DXY, state.DXY
-    );
-  }
-  if (state.KR10Y) {
-    db.prepare('INSERT OR REPLACE INTO candles VALUES (?, ?, ?, ?, ?, ?)').run(
-      'KR10Y', ts, state.KR10Y, state.KR10Y, state.KR10Y, state.KR10Y
-    );
-  }
+  if (state.USDKRW) storeCandle('USDKRW', state.USDKRW);
+  if (state.EURKRW) storeCandle('EURKRW', state.EURKRW);
+  if (state.DXY) storeCandle('DXY', state.DXY);
+  
+  console.log('📊 상태:', state);
 }
 
-updateAll();
-setInterval(updateAll, 60000);
+// 서버 시작
+const PORT = process.env.PORT || 10000;
+app.listen(PORT, () => {
+  console.log(`🚀 서버 포트 ${PORT}`);
+  console.log(`📊 대시보드: http://localhost:${PORT}`);
+  
+  crawlLoop();
+  setInterval(crawlLoop, 60000);
+});
 
 app.get('/api/latest', (req, res) => {
   res.json({
     asofKST: kstNowString(),
-    ...state
+    USDKRW: state.USDKRW,
+    EURKRW: state.EURKRW,
+    DXY: state.DXY,
+    KR10Y: state.KR10Y,
+    US10Y: state.US10Y,
+    spread10y: state.spread10y
   });
 });
 
 app.get('/api/candles', (req, res) => {
-  const { symbol = 'USDKRW', interval = '1m', range = '24h' } = req.query;
+  const symbol = req.query.symbol || 'USDKRW';
+  const limit = Math.min(parseInt(req.query.limit) || 1440, 1440);
   
-  const rangeMap = { '24h': 86400, '3d': 259200, '7d': 604800 };
-  const seconds = rangeMap[range] || 86400;
-  const since = Math.floor(Date.now() / 1000) - seconds;
-  
-  const rows = db.prepare(
-    'SELECT * FROM candles WHERE symbol = ? AND timestamp >= ? ORDER BY timestamp ASC'
-  ).all(symbol, since);
+  const rows = db.prepare(`
+    SELECT * FROM candles
+    WHERE symbol = ?
+    ORDER BY timestamp DESC
+    LIMIT ?
+  `).all(symbol, limit);
   
   res.json({
     symbol,
-    interval,
-    range,
-    data: rows.map(r => ({ time: r.timestamp, value: r.close }))
+    count: rows.length,
+    candles: rows.reverse()
   });
 });
 
 app.get('/api/reserves', (req, res) => {
   res.json({
+    asofKST: kstNowString(),
     source: 'BOK press release',
     unit: 'USD bn',
     series: [
@@ -249,41 +260,34 @@ app.get('/api/analysis', async (req, res) => {
   
   const cached = analysisCache.get(cacheKey);
   if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
-    return res.json({ ...cached.data, cached: true });
-  }
-  
-  if (cached && Date.now() - cached.timestamp < COOLDOWN) {
-    const retryAfter = Math.ceil((COOLDOWN - (Date.now() - cached.timestamp)) / 1000);
-    return res.status(429).json({
-      error: '잠시 후 다시 시도해주세요',
-      retryAfter
-    });
-  }
-  
-  const apiKey = process.env.GEMINI_API_KEY;
-  if (!apiKey) {
-    return res.status(500).json({
-      error: 'GEMINI_API_KEY가 설정되지 않았습니다'
-    });
+    const cooldownRemaining = COOLDOWN - (Date.now() - cached.timestamp);
+    if (cooldownRemaining > 0) {
+      return res.json({
+        analysis: cached.analysis,
+        cached: true,
+        cooldownRemaining: Math.ceil(cooldownRemaining / 1000)
+      });
+    }
   }
   
   try {
-    const prompt = `당신은 외환시장 전문 애널리스트입니다.
-
-현재 데이터:
-- USD/KRW: ${state.USDKRW || 'N/A'}원
-- EUR/KRW: ${state.EURKRW || 'N/A'}원
+    const GEMINI_API_KEY = process.env.GEMINI_API_KEY;
+    if (!GEMINI_API_KEY) {
+      return res.status(500).json({ error: 'GEMINI_API_KEY가 설정되지 않았습니다.' });
+    }
+    
+    const prompt = `현재 ${symbol} 환율 상황 분석:
+- USD/KRW: ${state.USDKRW || 'N/A'}
+- EUR/KRW: ${state.EURKRW || 'N/A'}
 - DXY: ${state.DXY || 'N/A'}
-- KR 10년물: ${state.KR10Y || 'N/A'}%
-- US 10년물: ${state.US10Y || 'N/A'}%
+- KR10Y: ${state.KR10Y || 'N/A'}
+- US10Y: ${state.US10Y || 'N/A'}
+- 금리 스프레드: ${state.spread10y || 'N/A'}
 
-200자 이내로 시장 브리핑을 작성해주세요:
-1. 현재 환율 수준
-2. 주요 변동 요인
-3. 단기 전망`;
-
+3-4줄로 간단히 시황 브리핑 (한글, markdown)`;
+    
     const response = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${apiKey}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
       {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -295,33 +299,24 @@ app.get('/api/analysis', async (req, res) => {
     
     if (!response.ok) {
       const errorText = await response.text();
-      throw new Error(`Gemini API error: ${response.status} - ${errorText}`);
+      throw new Error(`Gemini API error: ${response.status} ${errorText}`);
     }
     
-    const result = await response.json();
-    const text = result.candidates[0].content.parts[0].text;
+    const data = await response.json();
+    const analysis = data.candidates?.[0]?.content?.parts?.[0]?.text || '분석 생성 실패';
     
-    const data = {
-      symbol,
-      analysis: text,
-      asofKST: kstNowString(),
-      cachedUntil: new Date(Date.now() + CACHE_TTL).toISOString()
-    };
+    analysisCache.set(cacheKey, {
+      analysis,
+      timestamp: Date.now()
+    });
     
-    analysisCache.set(cacheKey, { data, timestamp: Date.now() });
-    console.log(`✅ AI 분석: ${text.substring(0, 50)}...`);
+    res.json({
+      analysis,
+      cached: false
+    });
     
-    res.json(data);
   } catch (err) {
     console.error('❌ /api/analysis error:', err.message);
-    res.status(500).json({ 
-      error: 'AI 분석 생성 실패',
-      details: err.message 
-    });
+    res.status(500).json({ error: '분석 생성 실패: ' + err.message });
   }
-});
-
-const PORT = process.env.PORT || 3000;
-app.listen(PORT, () => {
-  console.log(`🚀 Server running on port ${PORT}`);
 });
