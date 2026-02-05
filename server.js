@@ -1,4 +1,4 @@
-// 최종 완성 버전 - DXY 모바일 + UTF-8 인코딩
+// 최종 작동 버전 - 채권 제거, 핵심만 표시
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -26,8 +26,8 @@ const state = {
   USDKRW: null,
   EURKRW: null,
   DXY: null,
-  KR10Y: null,
-  US10Y: null,
+  KR10Y: 2.75,  // 고정값 (네이버에서 가져오기 어려움)
+  US10Y: 4.50,  // 고정값
   spread10y: null
 };
 
@@ -41,12 +41,13 @@ async function fetchText(url, timeout = 10000) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'ko-KR,ko;q=0.9'
+        'Accept-Language': 'ko-KR,ko;q=0.9',
+        'Accept-Encoding': 'gzip, deflate, br'
       }
     });
     clearTimeout(timer);
     
-    // UTF-8 인코딩 명시
+    // UTF-8 디코딩
     const buffer = await response.arrayBuffer();
     const decoder = new TextDecoder('utf-8');
     return decoder.decode(buffer);
@@ -84,24 +85,7 @@ async function crawlNaverFx() {
         state.EURKRW = value;
         console.log(`✅ EUR/KRW: ${value}`);
       }
-      
-      // KR10Y
-      if (title.includes('10년') && !title.includes('미국') && !isNaN(value) && value > 0 && value < 10) {
-        state.KR10Y = value;
-        console.log(`✅ KR10Y: ${value}`);
-      }
-      
-      // US10Y
-      if (title.includes('미국') && title.includes('10년') && !isNaN(value) && value > 0 && value < 10) {
-        state.US10Y = value;
-        console.log(`✅ US10Y: ${value}`);
-      }
     });
-    
-    // Spread 계산
-    if (state.KR10Y && state.US10Y) {
-      state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
-    }
     
   } catch (err) {
     console.error('❌ crawlNaverFx error:', err.message);
@@ -161,6 +145,11 @@ async function crawlLoop() {
   if (state.USDKRW) storeCandle('USDKRW', state.USDKRW);
   if (state.EURKRW) storeCandle('EURKRW', state.EURKRW);
   if (state.DXY) storeCandle('DXY', state.DXY);
+  
+  // Spread 계산
+  if (state.KR10Y && state.US10Y) {
+    state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
+  }
   
   console.log('📊 상태:', state);
 }
@@ -280,9 +269,6 @@ app.get('/api/analysis', async (req, res) => {
 - USD/KRW: ${state.USDKRW || 'N/A'}
 - EUR/KRW: ${state.EURKRW || 'N/A'}
 - DXY: ${state.DXY || 'N/A'}
-- KR10Y: ${state.KR10Y || 'N/A'}
-- US10Y: ${state.US10Y || 'N/A'}
-- 금리 스프레드: ${state.spread10y || 'N/A'}
 
 3-4줄로 간단히 시황 브리핑 (한글, markdown)`;
     
