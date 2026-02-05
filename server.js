@@ -1,4 +1,4 @@
-// 최종 완성 버전 - exchangeDetail 페이지 크롤링
+// 최종 완성 버전 - 메인 페이지 크롤링 (작동 확인됨)
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -45,10 +45,7 @@ async function fetchText(url, timeout = 10000) {
       }
     });
     clearTimeout(timer);
-    
-    const buffer = await response.arrayBuffer();
-    const decoder = new TextDecoder('utf-8');
-    return decoder.decode(buffer);
+    return await response.text();
   } catch (err) {
     clearTimeout(timer);
     throw err;
@@ -63,26 +60,48 @@ function kstNowString() {
 
 async function crawlNaverFx() {
   try {
-    // USD/KRW
-    const usdHtml = await fetchText('https://finance.naver.com/marketindex/exchangeDetail.naver?marketindexCd=FX_USDKRW');
-    const usdMatch = usdHtml.match(/__(\d{1,},?\d{3}\.\d{2})__/);
-    if (usdMatch && usdMatch[1]) {
-      const usd = parseFloat(usdMatch[1].replace(/,/g, ''));
-      if (!isNaN(usd) && usd > 500 && usd < 2000) {
-        state.USDKRW = usd;
-        console.log(`✅ USD/KRW: ${usd}`);
-      }
-    }
+    const html = await fetchText('https://finance.naver.com/marketindex/');
+    const $ = cheerio.load(html);
     
-    // EUR/KRW
-    const eurHtml = await fetchText('https://finance.naver.com/marketindex/exchangeDetail.naver?marketindexCd=FX_EURKRW');
-    const eurMatch = eurHtml.match(/__(\d{1,},?\d{3}\.\d{2})__/);
-    if (eurMatch && eurMatch[1]) {
-      const eur = parseFloat(eurMatch[1].replace(/,/g, ''));
-      if (!isNaN(eur) && eur > 800 && eur < 2500) {
-        state.EURKRW = eur;
-        console.log(`✅ EUR/KRW: ${eur}`);
+    // h3.h_lst로 모든 항목 찾기
+    $('h3.h_lst').each((i, el) => {
+      const title = $(el).text().trim();
+      const valueText = $(el).parent().find('.value').text().replace(/,/g, '').trim();
+      const value = parseFloat(valueText);
+      
+      // USD/KRW
+      if (title.includes('USD') && !isNaN(value) && value > 500 && value < 2000) {
+        state.USDKRW = value;
+        console.log(`✅ USD/KRW: ${value}`);
       }
+      
+      // EUR/KRW
+      if (title.includes('EUR') && !isNaN(value) && value > 800 && value < 2500) {
+        state.EURKRW = value;
+        console.log(`✅ EUR/KRW: ${value}`);
+      }
+      
+      // KR10Y
+      if (title.includes('10년') && !title.includes('미국') && !isNaN(value) && value > 0 && value < 10) {
+        state.KR10Y = value;
+        console.log(`✅ KR10Y: ${value}`);
+      }
+      
+      // US10Y
+      if (title.includes('미국') && title.includes('10년') && !isNaN(value) && value > 0 && value < 10) {
+        state.US10Y = value;
+        console.log(`✅ US10Y: ${value}`);
+      }
+      
+      // DXY
+      if (title.includes('달러인덱스') && !isNaN(value) && value > 50 && value < 150) {
+        state.DXY = parseFloat(value.toFixed(2));
+        console.log(`✅ DXY: ${state.DXY}`);
+      }
+    });
+    
+    if (state.KR10Y && state.US10Y) {
+      state.spread10y = parseFloat((state.US10Y - state.KR10Y).toFixed(2));
     }
     
     return true;
@@ -94,6 +113,12 @@ async function crawlNaverFx() {
 
 async function crawlNaverDXY() {
   try {
+    // 메인 페이지에서 이미 가져왔으면 Skip
+    if (state.DXY) {
+      return true;
+    }
+    
+    // 백업: 모바일 페이지
     const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
     const matches = html.match(/달러인덱스\*\*(\d{2,3}\.\d{2})\*\*/);
     
@@ -101,20 +126,8 @@ async function crawlNaverDXY() {
       const val = parseFloat(matches[1]);
       if (!isNaN(val) && val > 50 && val < 150) {
         state.DXY = parseFloat(val.toFixed(2));
-        console.log(`✅ DXY: ${state.DXY}`);
+        console.log(`✅ DXY (모바일): ${state.DXY}`);
         return true;
-      }
-    }
-    
-    const backup = html.match(/(\d{2,3}\.\d{2})/g);
-    if (backup && backup.length > 0) {
-      for (const num of backup) {
-        const val = parseFloat(num);
-        if (!isNaN(val) && val > 90 && val < 110) {
-          state.DXY = parseFloat(val.toFixed(2));
-          console.log(`✅ DXY (백업): ${state.DXY}`);
-          return true;
-        }
       }
     }
     
@@ -125,42 +138,10 @@ async function crawlNaverDXY() {
   }
 }
 
-async function crawlNaverBond() {
-  try {
-    const html = await fetchText('https://finance.naver.com/marketindex/');
-    const $ = cheerio.load(html);
-    
-    $('h3.h_lst').each((i, el) => {
-      const title = $(el).text().trim();
-      const valueText = $(el).parent().find('.value').text().replace(/,/g, '');
-      const value = parseFloat(valueText);
-      
-      if (title.includes('한국') && title.includes('10년') && !isNaN(value)) {
-        state.KR10Y = value;
-        console.log(`✅ KR10Y: ${value}`);
-      }
-      if (title.includes('미국') && title.includes('10년') && !isNaN(value)) {
-        state.US10Y = value;
-        console.log(`✅ US10Y: ${value}`);
-      }
-    });
-    
-    if (state.KR10Y && state.US10Y) {
-      state.spread10y = parseFloat((state.US10Y - state.KR10Y).toFixed(2));
-    }
-    
-    return true;
-  } catch (err) {
-    console.error('❌ crawlNaverBond error:', err.message);
-    return false;
-  }
-}
-
 async function updateAll() {
   console.log('\n🔄 크롤링 시작:', kstNowString());
   await crawlNaverFx();
   await crawlNaverDXY();
-  await crawlNaverBond();
   
   const ts = Math.floor(Date.now() / 1000);
   if (state.USDKRW) {
