@@ -1,8 +1,7 @@
-// 최종 완성 - EUC-KR 인코딩 + 초기 데이터 + 새로고침 이슈 해결
+// 최종 완성 - EUC-KR + 메모리 배열 (SQLite 제거)
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
-const Database = require('better-sqlite3');
 const iconv = require('iconv-lite');
 
 const app = express();
@@ -10,18 +9,12 @@ app.use(cors());
 app.use(express.json());
 app.use(express.static('public'));
 
-const db = new Database(':memory:');
-db.exec(`
-  CREATE TABLE IF NOT EXISTS candles (
-    symbol TEXT,
-    timestamp INTEGER,
-    open REAL,
-    high REAL,
-    low REAL,
-    close REAL,
-    PRIMARY KEY (symbol, timestamp)
-  )
-`);
+// 메모리 기반 캔들 저장소
+const candles = {
+  USDKRW: [],
+  EURKRW: [],
+  DXY: []
+};
 
 const state = {
   USDKRW: null,
@@ -49,7 +42,6 @@ async function fetchText(url, encoding = 'utf-8', timeout = 10000) {
     
     const buffer = await response.arrayBuffer();
     
-    // 인코딩에 따라 디코딩
     if (encoding === 'euc-kr') {
       return iconv.decode(Buffer.from(buffer), 'euc-kr');
     } else {
@@ -118,21 +110,20 @@ function storeCandle(symbol, price) {
   if (!price || isNaN(price)) return;
   
   const now = Date.now();
-  const minute = Math.floor(now / 60000) * 60000;
+  const timestamp = Math.floor(now / 60000) * 60000;
   
-  const existing = db.prepare('SELECT * FROM candles WHERE symbol = ? AND timestamp = ?').get(symbol, minute);
+  // 배열에서 같은 타임스탬프 찾기
+  const existing = candles[symbol].find(c => c.timestamp === timestamp);
   
   if (existing) {
-    db.prepare(`
-      UPDATE candles
-      SET high = MAX(high, ?), low = MIN(low, ?), close = ?
-      WHERE symbol = ? AND timestamp = ?
-    `).run(price, price, price, symbol, minute);
+    existing.value = price;
   } else {
-    db.prepare(`
-      INSERT INTO candles (symbol, timestamp, open, high, low, close)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run(symbol, minute, price, price, price, price);
+    candles[symbol].push({ timestamp, value: price });
+    
+    // 최대 1440개 유지 (24시간)
+    if (candles[symbol].length > 1440) {
+      candles[symbol].shift();
+    }
   }
 }
 
@@ -145,16 +136,10 @@ function generateInitialData() {
     const minute = Math.floor(timestamp / 60000) * 60000;
     
     const usdkrw = basePrice.USDKRW + (Math.random() - 0.5) * 20;
-    db.prepare(`
-      INSERT OR IGNORE INTO candles (symbol, timestamp, open, high, low, close)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run('USDKRW', minute, usdkrw, usdkrw, usdkrw, usdkrw);
+    candles.USDKRW.push({ timestamp: minute, value: usdkrw });
     
     const dxy = basePrice.DXY + (Math.random() - 0.5);
-    db.prepare(`
-      INSERT OR IGNORE INTO candles (symbol, timestamp, open, high, low, close)
-      VALUES (?, ?, ?, ?, ?, ?)
-    `).run('DXY', minute, dxy, dxy, dxy, dxy);
+    candles.DXY.push({ timestamp: minute, value: dxy });
   }
   
   console.log('✅ 초기 차트 데이터 생성 완료 (1440분)');
@@ -209,16 +194,10 @@ app.get('/api/candles', (req, res) => {
   if (range === '3d') limit = 4320;
   if (range === '7d') limit = 10080;
   
-  const rows = db.prepare(`
-    SELECT timestamp, close as value FROM candles
-    WHERE symbol = ?
-    ORDER BY timestamp DESC
-    LIMIT ?
-  `).all(symbol, limit);
-  
-  const chartData = rows.reverse().map(row => ({
-    time: Math.floor(row.timestamp / 1000),
-    value: row.value
+  const data = candles[symbol] || [];
+  const chartData = data.slice(-limit).map(c => ({
+    time: Math.floor(c.timestamp / 1000),
+    value: c.value
   }));
   
   res.json({
@@ -248,7 +227,6 @@ app.get('/api/reserves', (req, res) => {
 
 app.get('/api/market/today', async (req, res) => {
   try {
-    // EUC-KR로 디코딩!
     const html = await fetchText('https://finance.naver.com/news/mainnews.naver', 'euc-kr');
     const $ = cheerio.load(html);
     const news = [];
