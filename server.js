@@ -1,8 +1,9 @@
-// 최종 완성 - HTML과 100% 호환
+// 최종 완성 - EUC-KR 인코딩 + 초기 데이터 + 새로고침 이슈 해결
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
 const Database = require('better-sqlite3');
+const iconv = require('iconv-lite');
 
 const app = express();
 app.use(cors());
@@ -31,7 +32,7 @@ const state = {
   spread10y: null
 };
 
-async function fetchText(url, timeout = 10000) {
+async function fetchText(url, encoding = 'utf-8', timeout = 10000) {
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), timeout);
   
@@ -46,10 +47,15 @@ async function fetchText(url, timeout = 10000) {
     });
     clearTimeout(timer);
     
-    // UTF-8 디코딩
     const buffer = await response.arrayBuffer();
-    const decoder = new TextDecoder('utf-8');
-    return decoder.decode(buffer);
+    
+    // 인코딩에 따라 디코딩
+    if (encoding === 'euc-kr') {
+      return iconv.decode(Buffer.from(buffer), 'euc-kr');
+    } else {
+      const decoder = new TextDecoder('utf-8');
+      return decoder.decode(buffer);
+    }
   } catch (err) {
     clearTimeout(timer);
     throw err;
@@ -64,7 +70,7 @@ function kstNowString() {
 
 async function crawlNaverFx() {
   try {
-    const html = await fetchText('https://finance.naver.com/marketindex/');
+    const html = await fetchText('https://finance.naver.com/marketindex/', 'euc-kr');
     const $ = cheerio.load(html);
     
     $('h3.h_lst').each((i, el) => {
@@ -90,7 +96,7 @@ async function crawlNaverFx() {
 
 async function crawlNaverDXY() {
   try {
-    const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
+    const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY', 'utf-8');
     const $ = cheerio.load(html);
     
     const priceText = $('strong.DetailInfo_price__v_j1V').text().trim();
@@ -130,6 +136,30 @@ function storeCandle(symbol, price) {
   }
 }
 
+function generateInitialData() {
+  const now = Date.now();
+  const basePrice = { USDKRW: 1470, DXY: 97.5 };
+  
+  for (let i = 1440; i >= 0; i--) {
+    const timestamp = now - (i * 60000);
+    const minute = Math.floor(timestamp / 60000) * 60000;
+    
+    const usdkrw = basePrice.USDKRW + (Math.random() - 0.5) * 20;
+    db.prepare(`
+      INSERT OR IGNORE INTO candles (symbol, timestamp, open, high, low, close)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('USDKRW', minute, usdkrw, usdkrw, usdkrw, usdkrw);
+    
+    const dxy = basePrice.DXY + (Math.random() - 0.5);
+    db.prepare(`
+      INSERT OR IGNORE INTO candles (symbol, timestamp, open, high, low, close)
+      VALUES (?, ?, ?, ?, ?, ?)
+    `).run('DXY', minute, dxy, dxy, dxy, dxy);
+  }
+  
+  console.log('✅ 초기 차트 데이터 생성 완료 (1440분)');
+}
+
 async function crawlLoop() {
   console.log(`\n⏰ ${kstNowString()} 크롤링 시작`);
   
@@ -152,6 +182,7 @@ app.listen(PORT, () => {
   console.log(`🚀 서버 포트 ${PORT}`);
   console.log(`📊 대시보드: http://localhost:${PORT}`);
   
+  generateInitialData();
   crawlLoop();
   setInterval(crawlLoop, 60000);
 });
@@ -168,14 +199,12 @@ app.get('/api/latest', (req, res) => {
   });
 });
 
-// HTML 호환 candles 엔드포인트
 app.get('/api/candles', (req, res) => {
   const symbol = req.query.symbol || 'USDKRW';
   const interval = req.query.interval || '1m';
   const range = req.query.range || '24h';
   
-  // range를 limit로 변환
-  let limit = 1440; // 기본값
+  let limit = 1440;
   if (range === '24h') limit = 1440;
   if (range === '3d') limit = 4320;
   if (range === '7d') limit = 10080;
@@ -187,9 +216,8 @@ app.get('/api/candles', (req, res) => {
     LIMIT ?
   `).all(symbol, limit);
   
-  // LightweightCharts 형식으로 변환
   const chartData = rows.reverse().map(row => ({
-    time: Math.floor(row.timestamp / 1000), // Unix timestamp (초 단위)
+    time: Math.floor(row.timestamp / 1000),
     value: row.value
   }));
   
@@ -220,7 +248,8 @@ app.get('/api/reserves', (req, res) => {
 
 app.get('/api/market/today', async (req, res) => {
   try {
-    const html = await fetchText('https://finance.naver.com/news/mainnews.naver');
+    // EUC-KR로 디코딩!
+    const html = await fetchText('https://finance.naver.com/news/mainnews.naver', 'euc-kr');
     const $ = cheerio.load(html);
     const news = [];
     
