@@ -2,12 +2,13 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
+  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>FX Dashboard</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
       background: #0f1729;
       color: #e2e8f0;
       padding: 20px;
@@ -73,6 +74,7 @@
     
     .chart-container {
       margin-top: 15px;
+      min-height: 200px;
     }
     
     .kpi-grid {
@@ -152,10 +154,16 @@
       background: #2563eb;
     }
     
+    .ai-button:disabled {
+      background: #64748b;
+      cursor: not-allowed;
+    }
+    
     .ai-content {
       font-size: 0.9rem;
       line-height: 1.6;
       color: #cbd5e1;
+      white-space: pre-wrap;
     }
   </style>
 </head>
@@ -171,18 +179,18 @@
     </header>
     
     <div class="layout">
-      <!-- 왼쪽 영역 -->
+      <!-- 왼쪽 -->
       <div>
-        <!-- USD/KRW 차트 -->
+        <!-- USD/KRW -->
         <div class="card">
           <div class="card-title">
             <span>USD/KRW <span class="badge">1m 24h</span></span>
             <span class="badge">candles</span>
           </div>
-          <div class="chart-container" id="chart-usdkrw" style="height: 300px;"></div>
+          <div class="chart-container" id="chart-usdkrw"></div>
         </div>
         
-        <!-- KPI 스냅샷 -->
+        <!-- KPI -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">KPI Snapshot <span class="asof" id="kpi-asof">--</span></div>
           <div class="kpi-grid">
@@ -209,36 +217,27 @@
             <div class="kpi-item">
               <div class="kpi-label">10Y Spread</div>
               <div class="kpi-value" id="kpi-spread">- pp</div>
-              <div class="note">US10Y - KR10Y</div>
+              <div class="note">KR10Y - US10Y</div>
             </div>
           </div>
         </div>
         
-        <!-- DXY 차트 -->
+        <!-- DXY -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">
             <span>DXY <span class="badge">line</span></span>
-            <span class="badge">5m 3d</span>
+            <span class="badge">candles</span>
           </div>
-          <div class="chart-container" id="chart-dxy" style="height: 250px;"></div>
-        </div>
-        
-        <!-- KR10Y 차트 -->
-        <div class="card" style="margin-top: 20px;">
-          <div class="card-title">
-            <span>KR10Y <span class="badge">line</span></span>
-            <span class="badge">5m 7d</span>
-          </div>
-          <div class="chart-container" id="chart-kr10y" style="height: 250px;"></div>
+          <div class="chart-container" id="chart-dxy"></div>
         </div>
       </div>
       
-      <!-- 오른쪽 영역 -->
+      <!-- 오른쪽 -->
       <div>
-        <!-- Market Brief -->
+        <!-- 뉴스 -->
         <div class="card">
           <div class="card-title">
-            <span>Market Brief <span class="badge">noCLI</span></span>
+            <span>Market Brief <span class="badge">NAVER</span></span>
             <a href="/api/market/today" class="link" target="_blank">/api/market/today</a>
           </div>
           <ul class="news-list" id="news-list">
@@ -252,21 +251,19 @@
             <span>시황 (AI) <a href="/api/analysis" class="link" target="_blank">/api/analysis</a></span>
           </div>
           <div class="ai-section">
-            <button class="ai-button" onclick="loadAIAnalysis()">🤖 AI 분석 요청</button>
-            <div class="ai-content" id="ai-content">
-              AI 분석을 보려면 위의 "🤖 AI 분석 요청" 버튼을 클릭하세요
-            </div>
+            <button class="ai-button" id="ai-btn" onclick="loadAIAnalysis()">🤖 AI 분석 생성</button>
+            <div class="ai-content" id="ai-content">버튼을 클릭하여 AI 시장 분석을 생성하세요.</div>
           </div>
         </div>
         
         <!-- 외화보유액 -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">
-            <span>외화보유액 <span class="badge">Line</span></span>
-            <span class="badge">Auto-scale</span>
+            <span>외화보유액 <span class="badge">Line Auto-scale</span></span>
+            <a href="/api/reserves" class="link" target="_blank">/api/reserves</a>
           </div>
-          <div class="chart-container" id="chart-reserves" style="height: 300px;"></div>
-          <div class="note">단위: USD bn · 출처: BOK press release (public/data/reserves.json)</div>
+          <div class="chart-container" id="chart-reserves"></div>
+          <div class="note">단위: USD bn · 출처: 한국은행</div>
         </div>
       </div>
     </div>
@@ -310,16 +307,6 @@
       lineWidth: 2 
     });
     
-    // KR10Y
-    charts.kr10y = LightweightCharts.createChart(
-      document.getElementById('chart-kr10y'), 
-      { ...chartOptions, height: 250 }
-    );
-    series.kr10y = charts.kr10y.addLineSeries({ 
-      color: '#ef4444', 
-      lineWidth: 2 
-    });
-    
     // Reserves
     charts.reserves = LightweightCharts.createChart(
       document.getElementById('chart-reserves'), 
@@ -335,8 +322,14 @@
       try {
         const res = await fetch(`/api/candles?symbol=${symbol}&interval=${interval}&range=${range}`);
         const data = await res.json();
+        
+        console.log(`📊 ${symbol} 캔들 데이터:`, data);
+        
         if (data.data && data.data.length > 0) {
           chartSeries.setData(data.data);
+          console.log(`✅ ${symbol} 차트 렌더링 완료 (${data.data.length}개)`);
+        } else {
+          console.warn(`⚠️ ${symbol} 데이터 없음`);
         }
       } catch (err) {
         console.error(`❌ loadCandles ${symbol} error:`, err);
@@ -348,8 +341,10 @@
         const res = await fetch('/api/latest');
         const data = await res.json();
         
-        document.getElementById('header-asof').textContent = data.asofKST;
-        document.getElementById('kpi-asof').textContent = data.asofKST;
+        console.log('📊 최신 데이터:', data);
+        
+        document.getElementById('header-asof').textContent = data.asofKST || '--';
+        document.getElementById('kpi-asof').textContent = data.asofKST || '--';
         
         document.getElementById('kpi-usd').textContent = data.USDKRW ? data.USDKRW.toFixed(2) : '-';
         document.getElementById('kpi-eur').textContent = data.EURKRW ? data.EURKRW.toFixed(2) : '-';
@@ -367,11 +362,16 @@
         const res = await fetch('/api/market/today');
         const data = await res.json();
         
+        console.log('📰 뉴스 데이터:', data);
+        
         if (data.news && data.news.length > 0) {
           const html = data.news.map(n => 
             `<li><a href="${n.url}" target="_blank">${n.title}</a></li>`
           ).join('');
           document.getElementById('news-list').innerHTML = html;
+          console.log('✅ 뉴스 렌더링 완료');
+        } else {
+          document.getElementById('news-list').innerHTML = '<li>뉴스가 없습니다</li>';
         }
       } catch (err) {
         console.error('❌ loadNews error:', err);
@@ -390,6 +390,7 @@
             value: d.value
           }));
           series.reserves.setData(chartData);
+          console.log('✅ 외화보유액 차트 렌더링 완료');
         }
       } catch (err) {
         console.error('❌ loadReserves error:', err);
@@ -397,12 +398,12 @@
     }
     
     async function loadAIAnalysis() {
-      const btn = document.querySelector('.ai-button');
+      const btn = document.getElementById('ai-btn');
       const content = document.getElementById('ai-content');
       
       btn.disabled = true;
-      btn.textContent = '⏳ 분석 중...';
-      content.textContent = 'AI가 시장을 분석하고 있습니다...';
+      btn.textContent = '⏳ AI 분석 중...';
+      content.textContent = '시장 데이터를 분석하고 있습니다...';
       
       try {
         const res = await fetch('/api/analysis');
@@ -411,33 +412,38 @@
         if (data.analysis) {
           content.textContent = data.analysis;
           btn.textContent = '✅ 분석 완료';
+          console.log('✅ AI 분석 완료');
         } else if (data.error) {
           content.textContent = `⚠️ ${data.error}`;
-          btn.textContent = '🤖 AI 분석 요청';
+          btn.textContent = '🤖 AI 분석 생성';
           btn.disabled = false;
         }
       } catch (err) {
         console.error('❌ AI 분석 error:', err);
         content.textContent = '⚠️ AI 분석 생성 실패';
-        btn.textContent = '🤖 AI 분석 요청';
+        btn.textContent = '🤖 AI 분석 생성';
         btn.disabled = false;
       }
     }
     
     // 초기 로딩
+    console.log('🚀 FX Dashboard 초기화 시작');
+    
     Promise.all([
       loadLatest(),
       loadNews(),
       loadReserves(),
       loadCandles('USDKRW', '1m', '24h', series.usdkrw),
-      loadCandles('DXY', '5m', '3d', series.dxy),
-      loadCandles('KR10Y', '5m', '7d', series.kr10y)
-    ]);
+      loadCandles('DXY', '5m', '3d', series.dxy)
+    ]).then(() => {
+      console.log('✅ 모든 데이터 로딩 완료');
+    });
     
     // 1분마다 업데이트
     setInterval(() => {
       loadLatest();
       loadCandles('USDKRW', '1m', '24h', series.usdkrw);
+      loadCandles('DXY', '5m', '3d', series.dxy);
     }, 60000);
   </script>
 </body>
