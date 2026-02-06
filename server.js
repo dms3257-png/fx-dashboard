@@ -1,4 +1,4 @@
-// 최종 작동 버전 - 채권 제거, 핵심만 표시
+// 최종 완성 - HTML과 100% 호환
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -26,8 +26,8 @@ const state = {
   USDKRW: null,
   EURKRW: null,
   DXY: null,
-  KR10Y: 2.75,  // 고정값 (네이버에서 가져오기 어려움)
-  US10Y: 4.50,  // 고정값
+  KR10Y: 2.75,
+  US10Y: 4.50,
   spread10y: null
 };
 
@@ -41,8 +41,7 @@ async function fetchText(url, timeout = 10000) {
       headers: {
         'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
         'Accept': 'text/html,application/xhtml+xml',
-        'Accept-Language': 'ko-KR,ko;q=0.9',
-        'Accept-Encoding': 'gzip, deflate, br'
+        'Accept-Language': 'ko-KR,ko;q=0.9'
       }
     });
     clearTimeout(timer);
@@ -68,19 +67,16 @@ async function crawlNaverFx() {
     const html = await fetchText('https://finance.naver.com/marketindex/');
     const $ = cheerio.load(html);
     
-    // h3.h_lst로 모든 항목 찾기
     $('h3.h_lst').each((i, el) => {
       const title = $(el).text().trim();
       const valueText = $(el).parent().find('.value').text().replace(/,/g, '').trim();
       const value = parseFloat(valueText);
       
-      // USD/KRW
       if (title.includes('USD') && !isNaN(value) && value > 500 && value < 2000) {
         state.USDKRW = value;
         console.log(`✅ USD/KRW: ${value}`);
       }
       
-      // EUR/KRW
       if (title.includes('EUR') && !isNaN(value) && value > 800 && value < 2500) {
         state.EURKRW = value;
         console.log(`✅ EUR/KRW: ${value}`);
@@ -92,13 +88,11 @@ async function crawlNaverFx() {
   }
 }
 
-// DXY는 모바일 페이지에서 크롤링
 async function crawlNaverDXY() {
   try {
     const html = await fetchText('https://m.stock.naver.com/marketindex/exchange/.DXY');
     const $ = cheerio.load(html);
     
-    // DetailInfo_price__v_j1V 클래스에서 가격 추출
     const priceText = $('strong.DetailInfo_price__v_j1V').text().trim();
     const value = parseFloat(priceText);
     
@@ -146,7 +140,6 @@ async function crawlLoop() {
   if (state.EURKRW) storeCandle('EURKRW', state.EURKRW);
   if (state.DXY) storeCandle('DXY', state.DXY);
   
-  // Spread 계산
   if (state.KR10Y && state.US10Y) {
     state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
   }
@@ -154,7 +147,6 @@ async function crawlLoop() {
   console.log('📊 상태:', state);
 }
 
-// 서버 시작
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 서버 포트 ${PORT}`);
@@ -176,21 +168,37 @@ app.get('/api/latest', (req, res) => {
   });
 });
 
+// HTML 호환 candles 엔드포인트
 app.get('/api/candles', (req, res) => {
   const symbol = req.query.symbol || 'USDKRW';
-  const limit = Math.min(parseInt(req.query.limit) || 1440, 1440);
+  const interval = req.query.interval || '1m';
+  const range = req.query.range || '24h';
+  
+  // range를 limit로 변환
+  let limit = 1440; // 기본값
+  if (range === '24h') limit = 1440;
+  if (range === '3d') limit = 4320;
+  if (range === '7d') limit = 10080;
   
   const rows = db.prepare(`
-    SELECT * FROM candles
+    SELECT timestamp, close as value FROM candles
     WHERE symbol = ?
     ORDER BY timestamp DESC
     LIMIT ?
   `).all(symbol, limit);
   
+  // LightweightCharts 형식으로 변환
+  const chartData = rows.reverse().map(row => ({
+    time: Math.floor(row.timestamp / 1000), // Unix timestamp (초 단위)
+    value: row.value
+  }));
+  
   res.json({
     symbol,
-    count: rows.length,
-    candles: rows.reverse()
+    interval,
+    range,
+    count: chartData.length,
+    data: chartData
   });
 });
 
