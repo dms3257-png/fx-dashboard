@@ -8,7 +8,7 @@
   <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>FX Dashboard v2.0</title>
+  <title>FX Dashboard v3.0</title>
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
@@ -141,6 +141,8 @@
       background: #0f1729;
       border-radius: 6px;
       border: 1px solid #2d3748;
+      max-height: 600px;
+      overflow-y: auto;
     }
     
     .ai-button {
@@ -188,8 +190,8 @@
         <!-- USD/KRW -->
         <div class="card">
           <div class="card-title">
-            <span>USD/KRW <span class="badge">1m 24h</span></span>
-            <span class="badge">candles</span>
+            <span>USD/KRW <span class="badge">30분봉</span></span>
+            <span class="badge">캔들스틱</span>
           </div>
           <div class="chart-container" id="chart-usdkrw"></div>
         </div>
@@ -229,8 +231,8 @@
         <!-- DXY -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">
-            <span>DXY <span class="badge">line</span></span>
-            <span class="badge">candles</span>
+            <span>DXY <span class="badge">일봉</span></span>
+            <span class="badge">캔들스틱</span>
           </div>
           <div class="chart-container" id="chart-dxy"></div>
         </div>
@@ -252,11 +254,12 @@
         <!-- AI 분석 -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">
-            <span>시황 (AI) <a href="/api/analysis" class="link" target="_blank">/api/analysis</a></span>
+            <span>심층 시황 분석 (AI) <span class="badge">Gemini 2.5 Flash</span></span>
+            <a href="/api/analysis" class="link" target="_blank">/api/analysis</a>
           </div>
           <div class="ai-section">
-            <button class="ai-button" id="ai-btn" onclick="loadAIAnalysis()">🤖 AI 분석 생성</button>
-            <div class="ai-content" id="ai-content">버튼을 클릭하여 AI 시장 분석을 생성하세요.</div>
+            <button class="ai-button" id="ai-btn" onclick="loadAIAnalysis()">🤖 AI 심층 분석 생성</button>
+            <div class="ai-content" id="ai-content">버튼을 클릭하여 OpenAI 스타일의 심층 시장 분석을 생성하세요.</div>
           </div>
         </div>
         
@@ -273,9 +276,9 @@
     </div>
   </div>
   
-  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js?v=20260206"></script>
+  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js?v=20260212"></script>
   <script>
-    // 버전: 2026-02-06-v2
+    // 버전: 2026-02-12-v3 (캔들스틱 + 심층 AI)
     const charts = {};
     const series = {};
     
@@ -292,24 +295,30 @@
       rightPriceScale: { borderColor: '#2d3748' }
     };
     
-    // USD/KRW
+    // USD/KRW - 캔들스틱 차트 (30분봉)
     charts.usdkrw = LightweightCharts.createChart(
       document.getElementById('chart-usdkrw'), 
       { ...chartOptions, height: 300 }
     );
-    series.usdkrw = charts.usdkrw.addLineSeries({ 
-      color: '#3b82f6', 
-      lineWidth: 2 
+    series.usdkrw = charts.usdkrw.addCandlestickSeries({
+      upColor: '#26a69a',
+      downColor: '#ef5350',
+      borderVisible: false,
+      wickUpColor: '#26a69a',
+      wickDownColor: '#ef5350'
     });
     
-    // DXY
+    // DXY - 캔들스틱 차트 (일봉)
     charts.dxy = LightweightCharts.createChart(
       document.getElementById('chart-dxy'), 
       { ...chartOptions, height: 250 }
     );
-    series.dxy = charts.dxy.addLineSeries({ 
-      color: '#10b981', 
-      lineWidth: 2 
+    series.dxy = charts.dxy.addCandlestickSeries({
+      upColor: '#10b981',
+      downColor: '#ef4444',
+      borderVisible: false,
+      wickUpColor: '#10b981',
+      wickDownColor: '#ef4444'
     });
     
     // Reserves
@@ -407,39 +416,43 @@
       const content = document.getElementById('ai-content');
       
       btn.disabled = true;
-      btn.textContent = '⏳ AI 분석 중...';
-      content.textContent = '시장 데이터를 분석하고 있습니다...';
+      btn.textContent = '⏳ AI 심층 분석 중...';
+      content.textContent = '시장 데이터를 심층 분석하고 있습니다. 약 10-15초 소요됩니다...';
       
       try {
         const res = await fetch('/api/analysis');
         const data = await res.json();
         
         if (data.analysis) {
-          content.textContent = data.analysis;
+          // Markdown 기본 렌더링
+          let formatted = data.analysis
+            .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+            .replace(/\n/g, '<br>');
+          content.innerHTML = formatted;
           btn.textContent = '✅ 분석 완료';
-          console.log('✅ AI 분석 완료');
+          console.log('✅ AI 심층 분석 완료');
         } else if (data.error) {
           content.textContent = `⚠️ ${data.error}`;
-          btn.textContent = '🤖 AI 분석 생성';
+          btn.textContent = '🤖 AI 심층 분석 생성';
           btn.disabled = false;
         }
       } catch (err) {
         console.error('❌ AI 분석 error:', err);
         content.textContent = '⚠️ AI 분석 생성 실패';
-        btn.textContent = '🤖 AI 분석 생성';
+        btn.textContent = '🤖 AI 심층 분석 생성';
         btn.disabled = false;
       }
     }
     
     // 초기 로딩
-    console.log('🚀 FX Dashboard 초기화 시작');
+    console.log('🚀 FX Dashboard v3.0 초기화 시작');
     
     Promise.all([
       loadLatest(),
       loadNews(),
       loadReserves(),
-      loadCandles('USDKRW', '1m', '24h', series.usdkrw),
-      loadCandles('DXY', '5m', '3d', series.dxy)
+      loadCandles('USDKRW', '30m', '7d', series.usdkrw),
+      loadCandles('DXY', '1d', '30d', series.dxy)
     ]).then(() => {
       console.log('✅ 모든 데이터 로딩 완료');
     });
@@ -447,8 +460,8 @@
     // 1분마다 업데이트
     setInterval(() => {
       loadLatest();
-      loadCandles('USDKRW', '1m', '24h', series.usdkrw);
-      loadCandles('DXY', '5m', '3d', series.dxy);
+      loadCandles('USDKRW', '30m', '7d', series.usdkrw);
+      loadCandles('DXY', '1d', '30d', series.dxy);
     }, 60000);
   </script>
 </body>
