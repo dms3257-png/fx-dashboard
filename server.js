@@ -7,6 +7,17 @@ const iconv = require('iconv-lite');
 const app = express();
 app.use(cors());
 app.use(express.json());
+
+// HTML 캐시 방지 (핵심!)
+app.use((req, res, next) => {
+  if (req.path.endsWith('.html') || req.path === '/') {
+    res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate');
+    res.setHeader('Pragma', 'no-cache');
+    res.setHeader('Expires', '0');
+  }
+  next();
+});
+
 app.use(express.static('public'));
 
 // 메모리 기반 캔들 저장소
