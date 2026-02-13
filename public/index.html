@@ -2,11 +2,10 @@
 <html lang="ko">
 <head>
   <meta charset="UTF-8">
-  <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <!-- 강력한 캐시 방지 -->
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
+  <!-- 완벽한 캐시 방지 -->
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   
@@ -18,7 +17,7 @@
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", "Noto Sans KR", sans-serif;
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
       background: #0f1729;
       color: #e2e8f0;
       padding: 20px;
@@ -265,7 +264,7 @@
         <!-- DXY -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">
-            <span>DXY <span class="badge blue">일봉</span></span>
+            <span>DXY <span class="badge blue">30분봉</span></span>
             <span class="badge">캔들스틱</span>
           </div>
           <div class="chart-container" id="chart-dxy"></div>
@@ -288,7 +287,7 @@
         <!-- AI 분석 -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">
-            <span>심층 시황 분석 <span class="badge green">Gemini 2.5 Flash</span></span>
+            <span>심층 시황 분석 <span class="badge green">Gemini 2.5</span></span>
             <a href="/api/analysis" class="link" target="_blank">API</a>
           </div>
           <div class="ai-section">
@@ -300,11 +299,11 @@
         <!-- 외화보유액 -->
         <div class="card" style="margin-top: 20px;">
           <div class="card-title">
-            <span>외화보유액 (2년) <span class="badge blue">월별</span></span>
+            <span>외화보유액 2025 <span class="badge blue">월별</span></span>
             <a href="/api/reserves" class="link" target="_blank">API</a>
           </div>
           <div class="chart-container" id="chart-reserves"></div>
-          <div class="note">단위: USD bn · 출처: 한국은행 (Bank of Korea)</div>
+          <div class="note">단위: USD bn · 출처: 한국은행</div>
         </div>
       </div>
     </div>
@@ -312,7 +311,8 @@
   
   <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
   <script>
-    // 버전: 2026-02-12-FINAL-PERFECT
+    // 버전: CLEAN-v1 (30분봉 통일 + 캐시 완전제거 + 2025만)
+    const VERSION = Date.now();
     const charts = {};
     const series = {};
     
@@ -336,7 +336,7 @@
       }
     };
     
-    // USD/KRW - 캔들스틱
+    // USD/KRW - 30분봉
     charts.usdkrw = LightweightCharts.createChart(
       document.getElementById('chart-usdkrw'), 
       { ...chartOptions, height: 300 }
@@ -349,7 +349,7 @@
       wickDownColor: '#ef5350'
     });
     
-    // DXY - 캔들스틱
+    // DXY - 30분봉
     charts.dxy = LightweightCharts.createChart(
       document.getElementById('chart-dxy'), 
       { ...chartOptions, height: 250 }
@@ -374,31 +374,38 @@
       lineWidth: 2
     });
     
+    // 캐시 우회 fetch
+    function fetchNoCache(url) {
+      return fetch(url + '?v=' + VERSION + '&t=' + Date.now(), {
+        cache: 'no-store',
+        headers: {
+          'Cache-Control': 'no-cache',
+          'Pragma': 'no-cache'
+        }
+      });
+    }
+    
     // 데이터 로딩
-    async function loadCandles(symbol, interval, range, chartSeries) {
+    async function loadCandles(symbol, chartSeries) {
       try {
-        const res = await fetch(`/api/candles?symbol=${symbol}&interval=${interval}&range=${range}&_t=${Date.now()}`);
+        const res = await fetchNoCache(`/api/candles?symbol=${symbol}`);
         const data = await res.json();
         
-        console.log(`📊 ${symbol} 캔들 데이터:`, data.count, '개');
+        console.log(`📊 ${symbol}: ${data.count}개`);
         
         if (data.data && data.data.length > 0) {
           chartSeries.setData(data.data);
-          console.log(`✅ ${symbol} 차트 렌더링 완료`);
-        } else {
-          console.warn(`⚠️ ${symbol} 데이터 없음`);
+          console.log(`✅ ${symbol} 렌더링 완료`);
         }
       } catch (err) {
-        console.error(`❌ loadCandles ${symbol} error:`, err);
+        console.error(`❌ ${symbol} error:`, err);
       }
     }
     
     async function loadLatest() {
       try {
-        const res = await fetch(`/api/latest?_t=${Date.now()}`);
+        const res = await fetchNoCache('/api/latest');
         const data = await res.json();
-        
-        console.log('📊 최신 데이터:', data);
         
         document.getElementById('header-asof').textContent = data.asofKST || '--';
         document.getElementById('kpi-asof').textContent = data.asofKST || '--';
@@ -410,38 +417,36 @@
         document.getElementById('kpi-us10y').textContent = data.US10Y ? data.US10Y.toFixed(2) + '%' : '-';
         document.getElementById('kpi-spread').textContent = data.spread10y ? data.spread10y.toFixed(2) + ' pp' : '- pp';
       } catch (err) {
-        console.error('❌ loadLatest error:', err);
+        console.error('❌ loadLatest:', err);
       }
     }
     
     async function loadNews() {
       try {
-        const res = await fetch(`/api/market/today?_t=${Date.now()}`);
+        const res = await fetchNoCache('/api/market/today');
         const data = await res.json();
         
-        console.log('📰 뉴스:', data.news.length, '개');
+        console.log('📰 뉴스:', data.news.length);
         
         if (data.news && data.news.length > 0) {
           const html = data.news.map(n => 
             `<li><a href="${n.url}" target="_blank">${n.title}</a></li>`
           ).join('');
           document.getElementById('news-list').innerHTML = html;
-          console.log('✅ 뉴스 렌더링 완료');
         } else {
-          document.getElementById('news-list').innerHTML = '<li>뉴스가 없습니다</li>';
+          document.getElementById('news-list').innerHTML = '<li>뉴스 없음</li>';
         }
       } catch (err) {
-        console.error('❌ loadNews error:', err);
-        document.getElementById('news-list').innerHTML = '<li>뉴스 로딩 실패</li>';
+        console.error('❌ loadNews:', err);
       }
     }
     
     async function loadReserves() {
       try {
-        const res = await fetch(`/api/reserves?_t=${Date.now()}`);
+        const res = await fetchNoCache('/api/reserves');
         const data = await res.json();
         
-        console.log('💰 외화보유액:', data.series.length, '개월');
+        console.log('💰 외화보유액 2025:', data.series.length);
         
         if (data.series && data.series.length > 0) {
           const chartData = data.series.map(d => ({
@@ -449,10 +454,9 @@
             value: d.value
           }));
           series.reserves.setData(chartData);
-          console.log('✅ 외화보유액 차트 렌더링 완료');
         }
       } catch (err) {
-        console.error('❌ loadReserves error:', err);
+        console.error('❌ loadReserves:', err);
       }
     }
     
@@ -461,11 +465,11 @@
       const content = document.getElementById('ai-content');
       
       btn.disabled = true;
-      btn.textContent = '⏳ AI 심층 분석 중...';
-      content.textContent = '시장 데이터를 심층 분석하고 있습니다. 약 10-15초 소요됩니다...';
+      btn.textContent = '⏳ AI 분석 중...';
+      content.textContent = '시장 데이터를 심층 분석하고 있습니다...';
       
       try {
-        const res = await fetch(`/api/analysis?_t=${Date.now()}`);
+        const res = await fetchNoCache('/api/analysis');
         const data = await res.json();
         
         if (data.analysis) {
@@ -474,38 +478,37 @@
             .replace(/\n/g, '<br>');
           content.innerHTML = formatted;
           btn.textContent = '✅ 분석 완료';
-          console.log('✅ AI 심층 분석 완료');
         } else if (data.error) {
           content.textContent = `⚠️ ${data.error}`;
-          btn.textContent = '🤖 AI 심층 분석 생성';
+          btn.textContent = '🤖 AI 분석 생성';
           btn.disabled = false;
         }
       } catch (err) {
-        console.error('❌ AI 분석 error:', err);
-        content.textContent = '⚠️ AI 분석 생성 실패';
-        btn.textContent = '🤖 AI 심층 분석 생성';
+        console.error('❌ AI:', err);
+        content.textContent = '⚠️ 분석 실패';
+        btn.textContent = '🤖 AI 분석 생성';
         btn.disabled = false;
       }
     }
     
     // 초기 로딩
-    console.log('🚀 FX Dashboard FINAL-PERFECT 초기화');
+    console.log('🚀 FX Dashboard CLEAN 초기화');
     
     Promise.all([
       loadLatest(),
       loadNews(),
       loadReserves(),
-      loadCandles('USDKRW', '30m', '7d', series.usdkrw),
-      loadCandles('DXY', '1d', '30d', series.dxy)
+      loadCandles('USDKRW', series.usdkrw),
+      loadCandles('DXY', series.dxy)
     ]).then(() => {
-      console.log('✅ 모든 데이터 로딩 완료');
+      console.log('✅ 로딩 완료');
     });
     
     // 1분마다 업데이트
     setInterval(() => {
       loadLatest();
-      loadCandles('USDKRW', '30m', '7d', series.usdkrw);
-      loadCandles('DXY', '1d', '30d', series.dxy);
+      loadCandles('USDKRW', series.usdkrw);
+      loadCandles('DXY', series.dxy);
     }, 60000);
   </script>
 </body>
