@@ -1,4 +1,4 @@
-// 최종 완성 - 깔끔한 30분봉 + 캐시 완전 제거
+// 최종 완성 - 외화보유액 수정 + 완벽한 캐시 제거
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -8,23 +8,23 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 완벽한 캐시 방지
+// 최강 캐시 방지
 app.use((req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
   res.setHeader('Surrogate-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
   res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('ETag', `"${Date.now()}"`);
-  res.setHeader('Last-Modified', new Date().toUTCString());
+  res.setHeader('Vary', '*');
   next();
 });
 
 app.use(express.static('public', {
   etag: false,
   lastModified: false,
-  maxAge: 0
+  maxAge: 0,
+  immutable: false
 }));
 
 const candles = {
@@ -123,7 +123,6 @@ async function crawlNaverDXY() {
   }
 }
 
-// 캔들 저장 (30분봉만)
 function storeCandle(symbol, price) {
   if (!price || isNaN(price)) return;
   
@@ -151,16 +150,14 @@ function storeCandle(symbol, price) {
   }
 }
 
-// 초기 데이터 생성 (30분봉만 - 깔끔)
 function generateInitialData() {
   const now = Date.now();
   
-  // USD/KRW - 30분봉 336개 (7일)
-  let usdBase = 1438;
+  // USD/KRW - 30분봉 336개
+  let usdBase = 1440;
   for (let i = 336; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
     
-    // 점진적 변화만
     usdBase += (Math.random() - 0.5) * 1.5;
     
     const open = usdBase;
@@ -178,7 +175,7 @@ function generateInitialData() {
     });
   }
   
-  // DXY - 30분봉 336개 (7일)
+  // DXY - 30분봉 336개
   let dxyBase = 96.95;
   for (let i = 336; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
@@ -200,11 +197,11 @@ function generateInitialData() {
     });
   }
   
-  console.log('✅ 초기 데이터 생성: USD/KRW 30분봉 336개, DXY 30분봉 336개');
+  console.log('✅ 초기 데이터: USD/KRW 336개, DXY 336개');
 }
 
 async function crawlLoop() {
-  console.log(`\n⏰ ${kstNowString()} 크롤링 시작`);
+  console.log(`\n⏰ ${kstNowString()}`);
   
   await crawlNaverFx();
   await crawlNaverDXY();
@@ -217,7 +214,7 @@ async function crawlLoop() {
     state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
   }
   
-  console.log('📊 상태:', state);
+  console.log('📊', state);
 }
 
 const PORT = process.env.PORT || 10000;
@@ -261,26 +258,26 @@ app.get('/api/candles', (req, res) => {
   });
 });
 
-// 외화보유액 - 2025년만 (12개월)
+// 외화보유액 - 2025년 12개월 (깔끔)
 app.get('/api/reserves', (req, res) => {
   res.json({
     asofKST: kstNowString(),
-    source: '한국은행 (Bank of Korea)',
+    source: '한국은행',
     unit: 'USD bn',
-    year: '2025',
+    year: 2025,
     series: [
-      { month: '2025-01', value: 424.65 },
-      { month: '2025-02', value: 426.12 },
-      { month: '2025-03', value: 427.89 },
-      { month: '2025-04', value: 426.54 },
-      { month: '2025-05', value: 428.32 },
-      { month: '2025-06', value: 429.76 },
-      { month: '2025-07', value: 427.45 },
-      { month: '2025-08', value: 420.10 },
-      { month: '2025-09', value: 421.40 },
-      { month: '2025-10', value: 424.00 },
-      { month: '2025-11', value: 423.20 },
-      { month: '2025-12', value: 425.80 }
+      { month: '2025-01', value: 424.6 },
+      { month: '2025-02', value: 426.1 },
+      { month: '2025-03', value: 427.9 },
+      { month: '2025-04', value: 426.5 },
+      { month: '2025-05', value: 428.3 },
+      { month: '2025-06', value: 429.8 },
+      { month: '2025-07', value: 427.5 },
+      { month: '2025-08', value: 420.1 },
+      { month: '2025-09', value: 421.4 },
+      { month: '2025-10', value: 424.0 },
+      { month: '2025-11', value: 423.2 },
+      { month: '2025-12', value: 425.8 }
     ]
   });
 });
