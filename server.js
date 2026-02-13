@@ -135,15 +135,17 @@ function storeCandle(symbol, price) {
 function generateInitialData() {
   const now = Date.now();
   
-  // USD/KRW - 48개 (1일)
+  // USD/KRW - 48개 (1일, 30분봉)
   let usdBase = 1440;
   for (let i = 48; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
-    usdBase += (Math.random() - 0.5) * 0.8;
+    // 부드러운 사인파 움직임 + 약간의 랜덤
+    usdBase = 1440 + Math.sin(i / 8) * 3 + (Math.random() - 0.5) * 0.3;
     const open = usdBase;
-    const close = open + (Math.random() - 0.5) * 1.2;
-    const high = Math.max(open, close) + Math.random() * 0.4;
-    const low = Math.min(open, close) - Math.random() * 0.4;
+    const volatility = 0.15; // 작은 변동성
+    const close = open + (Math.random() - 0.5) * volatility;
+    const high = Math.max(open, close) + Math.random() * 0.1;
+    const low = Math.min(open, close) - Math.random() * 0.1;
     
     candles.USDKRW.push({ 
       timestamp, 
@@ -154,15 +156,17 @@ function generateInitialData() {
     });
   }
   
-  // DXY - 48개 (1일)
+  // DXY - 48개 (1일, 30분봉)
   let dxyBase = 96.95;
   for (let i = 48; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
-    dxyBase += (Math.random() - 0.5) * 0.08;
+    // 부드러운 코사인파 움직임 + 약간의 랜덤
+    dxyBase = 96.95 + Math.cos(i / 10) * 0.4 + (Math.random() - 0.5) * 0.05;
     const open = dxyBase;
-    const close = open + (Math.random() - 0.5) * 0.12;
-    const high = Math.max(open, close) + Math.random() * 0.04;
-    const low = Math.min(open, close) - Math.random() * 0.04;
+    const volatility = 0.03; // 작은 변동성
+    const close = open + (Math.random() - 0.5) * volatility;
+    const high = Math.max(open, close) + Math.random() * 0.02;
+    const low = Math.min(open, close) - Math.random() * 0.02;
     
     candles.DXY.push({ 
       timestamp, 
