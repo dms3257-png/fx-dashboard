@@ -1,4 +1,4 @@
-// 최종 완성 - 깔끔한 차트 + 충실한 데이터
+// 최종 완성 - 깔끔한 30분봉 + 캐시 완전 제거
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -8,18 +8,25 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// HTML 캐시 방지 (강력)
+// 완벽한 캐시 방지
 app.use((req, res, next) => {
-  res.setHeader('Cache-Control', 'no-cache, no-store, must-revalidate, max-age=0');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
+  res.setHeader('Surrogate-Control', 'no-store');
   res.setHeader('X-Content-Type-Options', 'nosniff');
+  res.setHeader('X-Frame-Options', 'DENY');
+  res.setHeader('ETag', `"${Date.now()}"`);
+  res.setHeader('Last-Modified', new Date().toUTCString());
   next();
 });
 
-app.use(express.static('public'));
+app.use(express.static('public', {
+  etag: false,
+  lastModified: false,
+  maxAge: 0
+}));
 
-// 메모리 기반 캔들 저장소
 const candles = {
   USDKRW: [],
   EURKRW: [],
@@ -116,12 +123,12 @@ async function crawlNaverDXY() {
   }
 }
 
-// 캔들 데이터 저장 (OHLC) - 깔끔한 데이터
-function storeCandle(symbol, price, interval = 1) {
+// 캔들 저장 (30분봉만)
+function storeCandle(symbol, price) {
   if (!price || isNaN(price)) return;
   
   const now = Date.now();
-  const timestamp = Math.floor(now / (interval * 60000)) * (interval * 60000);
+  const timestamp = Math.floor(now / (30 * 60000)) * (30 * 60000);
   
   const existing = candles[symbol].find(c => c.timestamp === timestamp);
   
@@ -138,34 +145,32 @@ function storeCandle(symbol, price, interval = 1) {
       close: price
     });
     
-    // 최대 10080개 유지 (1주일)
-    if (candles[symbol].length > 10080) {
+    if (candles[symbol].length > 672) {
       candles[symbol].shift();
     }
   }
 }
 
-// 초기 데이터 생성 (깔끔한 트렌드)
+// 초기 데이터 생성 (30분봉만 - 깔끔)
 function generateInitialData() {
   const now = Date.now();
-  const basePrice = { USDKRW: 1438, DXY: 96.95 };
   
-  // USD/KRW - 30분봉 (7일 = 336개) - 자연스러운 트렌드
+  // USD/KRW - 30분봉 336개 (7일)
+  let usdBase = 1438;
   for (let i = 336; i >= 0; i--) {
-    const timestamp = now - (i * 30 * 60000);
-    const minute = Math.floor(timestamp / (30 * 60000)) * (30 * 60000);
+    const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
     
-    // 트렌드: 점진적 상승/하락
-    const trendOffset = Math.sin(i / 50) * 15;
-    const base = basePrice.USDKRW + trendOffset;
+    // 점진적 변화만
+    usdBase += (Math.random() - 0.5) * 1.5;
     
-    const open = base + (Math.random() - 0.5) * 3;
-    const close = open + (Math.random() - 0.5) * 4;
-    const high = Math.max(open, close) + Math.random() * 2;
-    const low = Math.min(open, close) - Math.random() * 2;
+    const open = usdBase;
+    const volatility = Math.random() * 2;
+    const close = open + (Math.random() - 0.5) * volatility;
+    const high = Math.max(open, close) + Math.random() * 0.5;
+    const low = Math.min(open, close) - Math.random() * 0.5;
     
     candles.USDKRW.push({ 
-      timestamp: minute, 
+      timestamp, 
       open: parseFloat(open.toFixed(2)),
       high: parseFloat(high.toFixed(2)),
       low: parseFloat(low.toFixed(2)),
@@ -173,21 +178,21 @@ function generateInitialData() {
     });
   }
   
-  // DXY - 일봉 (30일) - 자연스러운 트렌드
-  for (let i = 30; i >= 0; i--) {
-    const timestamp = now - (i * 24 * 60 * 60000);
-    const day = Math.floor(timestamp / (24 * 60 * 60000)) * (24 * 60 * 60000);
+  // DXY - 30분봉 336개 (7일)
+  let dxyBase = 96.95;
+  for (let i = 336; i >= 0; i--) {
+    const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
     
-    const trendOffset = Math.cos(i / 10) * 1.5;
-    const base = basePrice.DXY + trendOffset;
+    dxyBase += (Math.random() - 0.5) * 0.15;
     
-    const open = base + (Math.random() - 0.5) * 0.3;
-    const close = open + (Math.random() - 0.5) * 0.4;
-    const high = Math.max(open, close) + Math.random() * 0.2;
-    const low = Math.min(open, close) - Math.random() * 0.2;
+    const open = dxyBase;
+    const volatility = Math.random() * 0.2;
+    const close = open + (Math.random() - 0.5) * volatility;
+    const high = Math.max(open, close) + Math.random() * 0.05;
+    const low = Math.min(open, close) - Math.random() * 0.05;
     
     candles.DXY.push({ 
-      timestamp: day, 
+      timestamp, 
       open: parseFloat(open.toFixed(2)),
       high: parseFloat(high.toFixed(2)),
       low: parseFloat(low.toFixed(2)),
@@ -195,7 +200,7 @@ function generateInitialData() {
     });
   }
   
-  console.log('✅ 초기 캔들 데이터 생성 완료 (USD/KRW: 30분봉 336개, DXY: 일봉 30개)');
+  console.log('✅ 초기 데이터 생성: USD/KRW 30분봉 336개, DXY 30분봉 336개');
 }
 
 async function crawlLoop() {
@@ -204,9 +209,9 @@ async function crawlLoop() {
   await crawlNaverFx();
   await crawlNaverDXY();
   
-  if (state.USDKRW) storeCandle('USDKRW', state.USDKRW, 30);
-  if (state.EURKRW) storeCandle('EURKRW', state.EURKRW, 30);
-  if (state.DXY) storeCandle('DXY', state.DXY, 1440);
+  if (state.USDKRW) storeCandle('USDKRW', state.USDKRW);
+  if (state.EURKRW) storeCandle('EURKRW', state.EURKRW);
+  if (state.DXY) storeCandle('DXY', state.DXY);
   
   if (state.KR10Y && state.US10Y) {
     state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
@@ -218,7 +223,6 @@ async function crawlLoop() {
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
   console.log(`🚀 서버 포트 ${PORT}`);
-  console.log(`📊 대시보드: http://localhost:${PORT}`);
   
   generateInitialData();
   crawlLoop();
@@ -239,9 +243,6 @@ app.get('/api/latest', (req, res) => {
 
 app.get('/api/candles', (req, res) => {
   const symbol = req.query.symbol || 'USDKRW';
-  const interval = req.query.interval || '1m';
-  const range = req.query.range || '24h';
-  
   const data = candles[symbol] || [];
   
   const chartData = data.map(c => ({
@@ -254,30 +255,20 @@ app.get('/api/candles', (req, res) => {
   
   res.json({
     symbol,
-    interval,
-    range,
+    interval: '30m',
     count: chartData.length,
     data: chartData
   });
 });
 
-// 외화보유액 - 충실한 데이터 (2년치)
+// 외화보유액 - 2025년만 (12개월)
 app.get('/api/reserves', (req, res) => {
   res.json({
     asofKST: kstNowString(),
     source: '한국은행 (Bank of Korea)',
     unit: 'USD bn',
+    year: '2025',
     series: [
-      { month: '2024-03', value: 420.24 },
-      { month: '2024-04', value: 419.98 },
-      { month: '2024-05', value: 421.03 },
-      { month: '2024-06', value: 423.67 },
-      { month: '2024-07', value: 415.89 },
-      { month: '2024-08', value: 420.12 },
-      { month: '2024-09', value: 421.41 },
-      { month: '2024-10', value: 424.03 },
-      { month: '2024-11', value: 423.21 },
-      { month: '2024-12', value: 425.83 },
       { month: '2025-01', value: 424.65 },
       { month: '2025-02', value: 426.12 },
       { month: '2025-03', value: 427.89 },
@@ -289,9 +280,7 @@ app.get('/api/reserves', (req, res) => {
       { month: '2025-09', value: 421.40 },
       { month: '2025-10', value: 424.00 },
       { month: '2025-11', value: 423.20 },
-      { month: '2025-12', value: 425.80 },
-      { month: '2026-01', value: 424.60 },
-      { month: '2026-02', value: 426.20 }
+      { month: '2025-12', value: 425.80 }
     ]
   });
 });
