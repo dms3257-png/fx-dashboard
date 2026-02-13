@@ -1,4 +1,4 @@
-// 최종 완성 - 외화보유액 수정 + 완벽한 캐시 제거
+// 최종 완성 버전 - v1.0.0
 const express = require('express');
 const cors = require('cors');
 const cheerio = require('cheerio');
@@ -8,38 +8,24 @@ const app = express();
 app.use(cors());
 app.use(express.json());
 
-// 최강 캐시 방지
+// 강력한 캐시 방지
 app.use((req, res, next) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0');
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '0');
-  res.setHeader('Surrogate-Control', 'no-store');
-  res.setHeader('X-Content-Type-Options', 'nosniff');
-  res.setHeader('X-Frame-Options', 'DENY');
-  res.setHeader('Vary', '*');
   next();
 });
 
-app.use(express.static('public', {
-  etag: false,
-  lastModified: false,
-  maxAge: 0,
-  immutable: false
-}));
+app.use(express.static('public', { etag: false, maxAge: 0 }));
 
-const candles = {
-  USDKRW: [],
-  EURKRW: [],
-  DXY: []
-};
-
+const candles = { USDKRW: [], DXY: [] };
 const state = {
   USDKRW: null,
   EURKRW: null,
   DXY: null,
   KR10Y: 2.75,
   US10Y: 4.50,
-  spread10y: null
+  spread10y: -1.75
 };
 
 async function fetchText(url, encoding = 'utf-8', timeout = 10000) {
@@ -97,9 +83,8 @@ async function crawlNaverFx() {
         console.log(`✅ EUR/KRW: ${value}`);
       }
     });
-    
   } catch (err) {
-    console.error('❌ crawlNaverFx error:', err.message);
+    console.error('❌ crawlNaverFx:', err.message);
   }
 }
 
@@ -114,12 +99,9 @@ async function crawlNaverDXY() {
     if (!isNaN(value) && value > 50 && value < 150) {
       state.DXY = parseFloat(value.toFixed(2));
       console.log(`✅ DXY: ${state.DXY}`);
-      return;
     }
-    
-    console.error('❌ crawlNaverDXY: DXY 파싱 실패');
   } catch (err) {
-    console.error('❌ crawlNaverDXY error:', err.message);
+    console.error('❌ crawlNaverDXY:', err.message);
   }
 }
 
@@ -144,7 +126,7 @@ function storeCandle(symbol, price) {
       close: price
     });
     
-    if (candles[symbol].length > 672) {
+    if (candles[symbol].length > 168) {
       candles[symbol].shift();
     }
   }
@@ -153,18 +135,15 @@ function storeCandle(symbol, price) {
 function generateInitialData() {
   const now = Date.now();
   
-  // USD/KRW - 30분봉 336개
+  // USD/KRW - 168개 (3.5일)
   let usdBase = 1440;
-  for (let i = 336; i >= 0; i--) {
+  for (let i = 168; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
-    
-    usdBase += (Math.random() - 0.5) * 1.5;
-    
+    usdBase += (Math.random() - 0.5) * 0.8;
     const open = usdBase;
-    const volatility = Math.random() * 2;
-    const close = open + (Math.random() - 0.5) * volatility;
-    const high = Math.max(open, close) + Math.random() * 0.5;
-    const low = Math.min(open, close) - Math.random() * 0.5;
+    const close = open + (Math.random() - 0.5) * 1.2;
+    const high = Math.max(open, close) + Math.random() * 0.4;
+    const low = Math.min(open, close) - Math.random() * 0.4;
     
     candles.USDKRW.push({ 
       timestamp, 
@@ -175,18 +154,15 @@ function generateInitialData() {
     });
   }
   
-  // DXY - 30분봉 336개
+  // DXY - 168개 (3.5일)
   let dxyBase = 96.95;
-  for (let i = 336; i >= 0; i--) {
+  for (let i = 168; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
-    
-    dxyBase += (Math.random() - 0.5) * 0.15;
-    
+    dxyBase += (Math.random() - 0.5) * 0.08;
     const open = dxyBase;
-    const volatility = Math.random() * 0.2;
-    const close = open + (Math.random() - 0.5) * volatility;
-    const high = Math.max(open, close) + Math.random() * 0.05;
-    const low = Math.min(open, close) - Math.random() * 0.05;
+    const close = open + (Math.random() - 0.5) * 0.12;
+    const high = Math.max(open, close) + Math.random() * 0.04;
+    const low = Math.min(open, close) - Math.random() * 0.04;
     
     candles.DXY.push({ 
       timestamp, 
@@ -197,30 +173,24 @@ function generateInitialData() {
     });
   }
   
-  console.log('✅ 초기 데이터: USD/KRW 336개, DXY 336개');
+  console.log('✅ 초기 데이터 생성 완료: 168개 (3.5일)');
 }
 
 async function crawlLoop() {
   console.log(`\n⏰ ${kstNowString()}`);
-  
   await crawlNaverFx();
   await crawlNaverDXY();
   
   if (state.USDKRW) storeCandle('USDKRW', state.USDKRW);
-  if (state.EURKRW) storeCandle('EURKRW', state.EURKRW);
   if (state.DXY) storeCandle('DXY', state.DXY);
   
-  if (state.KR10Y && state.US10Y) {
-    state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
-  }
-  
+  state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
   console.log('📊', state);
 }
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 서버 포트 ${PORT}`);
-  
+  console.log(`🚀 서버 v1.0.0 - 포트 ${PORT}`);
   generateInitialData();
   crawlLoop();
   setInterval(crawlLoop, 60000);
@@ -228,6 +198,7 @@ app.listen(PORT, () => {
 
 app.get('/api/latest', (req, res) => {
   res.json({
+    version: '1.0.0',
     asofKST: kstNowString(),
     USDKRW: state.USDKRW,
     EURKRW: state.EURKRW,
@@ -251,6 +222,7 @@ app.get('/api/candles', (req, res) => {
   }));
   
   res.json({
+    version: '1.0.0',
     symbol,
     interval: '30m',
     count: chartData.length,
@@ -258,13 +230,12 @@ app.get('/api/candles', (req, res) => {
   });
 });
 
-// 외화보유액 - 2025년 12개월 (깔끔)
 app.get('/api/reserves', (req, res) => {
   res.json({
+    version: '1.0.0',
     asofKST: kstNowString(),
     source: '한국은행',
     unit: 'USD bn',
-    year: 2025,
     series: [
       { month: '2025-01', value: 424.6 },
       { month: '2025-02', value: 426.1 },
@@ -301,12 +272,13 @@ app.get('/api/market/today', async (req, res) => {
     });
     
     res.json({
+      version: '1.0.0',
       asofKST: kstNowString(),
       source: 'https://finance.naver.com/news/mainnews.naver',
       news
     });
   } catch (err) {
-    console.error('❌ /api/market/today error:', err.message);
+    console.error('❌ /api/market/today:', err.message);
     res.status(500).json({ error: '뉴스 수집 실패' });
   }
 });
@@ -349,29 +321,11 @@ app.get('/api/analysis', async (req, res) => {
 
 **분석 요구사항:**
 1. **시장 현황 진단 (Market Overview)**
-   - 원/달러 환율의 현재 위치와 트렌드
-   - DXY의 움직임과 글로벌 달러 수요 해석
-   - 채권 금리차가 환율에 미치는 영향
-
 2. **주요 리스크 요인 (Risk Factors)**
-   - 환율 변동성을 높일 수 있는 국내외 요인
-   - 금리차 확대/축소에 따른 자본유출입 리스크
-   - 지정학적/경제적 불확실성
-
 3. **단기 전망 (Short-term Outlook)**
-   - 향후 1주일 내 예상 환율 범위와 근거
-   - 주요 모니터링 지표 (Fed 발언, 무역수지 등)
-
 4. **트레이딩 관점 (Trading Perspective)**
-   - 현재 환율 수준에서의 포지셔닝 제안
-   - 주요 기술적/심리적 지지/저항선
 
-**형식:** 
-- 각 섹션을 명확히 구분하여 작성
-- 구체적인 수치와 논리적 근거 제시
-- 최소 500자 이상, 최대 800자
-- 한국어로 작성
-- Markdown 형식 사용`;
+최소 500자 이상, 최대 800자, 한국어, Markdown 형식`;
     
     const response = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${GEMINI_API_KEY}`,
@@ -398,12 +352,15 @@ app.get('/api/analysis', async (req, res) => {
     });
     
     res.json({
+      version: '1.0.0',
       analysis,
       cached: false
     });
     
   } catch (err) {
-    console.error('❌ /api/analysis error:', err.message);
+    console.error('❌ /api/analysis:', err.message);
     res.status(500).json({ error: '분석 생성 실패: ' + err.message });
   }
 });
+
+
