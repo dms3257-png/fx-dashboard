@@ -126,7 +126,7 @@ function storeCandle(symbol, price) {
       close: price
     });
     
-    if (candles[symbol].length > 168) {
+    if (candles[symbol].length > 48) {
       candles[symbol].shift();
     }
   }
@@ -135,9 +135,9 @@ function storeCandle(symbol, price) {
 function generateInitialData() {
   const now = Date.now();
   
-  // USD/KRW - 168개 (3.5일)
+  // USD/KRW - 48개 (1일)
   let usdBase = 1440;
-  for (let i = 168; i >= 0; i--) {
+  for (let i = 48; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
     usdBase += (Math.random() - 0.5) * 0.8;
     const open = usdBase;
@@ -154,9 +154,9 @@ function generateInitialData() {
     });
   }
   
-  // DXY - 168개 (3.5일)
+  // DXY - 48개 (1일)
   let dxyBase = 96.95;
-  for (let i = 168; i >= 0; i--) {
+  for (let i = 48; i >= 0; i--) {
     const timestamp = Math.floor((now - (i * 30 * 60000)) / (30 * 60000)) * (30 * 60000);
     dxyBase += (Math.random() - 0.5) * 0.08;
     const open = dxyBase;
@@ -173,7 +173,7 @@ function generateInitialData() {
     });
   }
   
-  console.log('✅ 초기 데이터 생성 완료: 168개 (3.5일)');
+  console.log('✅ 초기 데이터 생성 완료: 48개 (1일)');
 }
 
 async function crawlLoop() {
@@ -190,7 +190,7 @@ async function crawlLoop() {
 
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, () => {
-  console.log(`🚀 서버 v1.0.0 - 포트 ${PORT}`);
+  console.log(`🚀 서버 v2.0.0 - 포트 ${PORT}`);
   generateInitialData();
   crawlLoop();
   setInterval(crawlLoop, 60000);
@@ -198,7 +198,7 @@ app.listen(PORT, () => {
 
 app.get('/api/latest', (req, res) => {
   res.json({
-    version: '1.0.0',
+    version: '2.0.0',
     asofKST: kstNowString(),
     USDKRW: state.USDKRW,
     EURKRW: state.EURKRW,
@@ -222,7 +222,7 @@ app.get('/api/candles', (req, res) => {
   }));
   
   res.json({
-    version: '1.0.0',
+    version: '2.0.0',
     symbol,
     interval: '30m',
     count: chartData.length,
@@ -232,7 +232,7 @@ app.get('/api/candles', (req, res) => {
 
 app.get('/api/reserves', (req, res) => {
   res.json({
-    version: '1.0.0',
+    version: '2.0.0',
     asofKST: kstNowString(),
     source: '한국은행',
     unit: 'USD bn',
@@ -272,7 +272,7 @@ app.get('/api/market/today', async (req, res) => {
     });
     
     res.json({
-      version: '1.0.0',
+      version: '2.0.0',
       asofKST: kstNowString(),
       source: 'https://finance.naver.com/news/mainnews.naver',
       news
@@ -352,7 +352,7 @@ app.get('/api/analysis', async (req, res) => {
     });
     
     res.json({
-      version: '1.0.0',
+      version: '2.0.0',
       analysis,
       cached: false
     });
@@ -362,5 +362,3 @@ app.get('/api/analysis', async (req, res) => {
     res.status(500).json({ error: '분석 생성 실패: ' + err.message });
   }
 });
-
-
