@@ -4,15 +4,15 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   
-  <!-- 최강 캐시 방지 -->
-  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0, s-maxage=0">
+  <meta http-equiv="Cache-Control" content="no-store, no-cache, must-revalidate, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
   
   <title>💱 FX Dashboard</title>
   
-  <!-- 💱 Favicon (SVG) -->
-  <link rel="icon" type="image/svg+xml" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'%3E%3Ctext y='0.9em' font-size='90'%3E💱%3C/text%3E%3C/svg%3E">
+  <!-- SUAN FOOD 로고 Favicon -->
+  <link rel="icon" type="image/png" href="/icons/icon-192x192.png">
+  <link rel="apple-touch-icon" href="/icons/icon-192x192.png">
   
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -98,10 +98,10 @@
     
     .chart-container {
       margin-top: 15px;
-      min-height: 200px;
+      height: 250px;
       background: #0f1729;
       border-radius: 6px;
-      padding: 10px;
+      padding: 5px;
     }
     
     .kpi-grid {
@@ -311,8 +311,7 @@
   
   <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
   <script>
-    // 버전: FINAL-v2
-    const BUILD_ID = 'v2_' + Date.now();
+    const BUILD = 'v5_' + Date.now();
     const charts = {};
     const series = {};
     
@@ -327,28 +326,17 @@
       },
       timeScale: { 
         borderColor: '#2d3748',
-        timeVisible: true,
-        secondsVisible: false
+        timeVisible: true
       },
       rightPriceScale: { 
-        borderColor: '#2d3748',
-        autoScale: true
-      },
-      handleScroll: {
-        mouseWheel: true,
-        pressedMouseMove: true
-      },
-      handleScale: {
-        axisPressedMouseMove: true,
-        mouseWheel: true,
-        pinch: true
+        borderColor: '#2d3748'
       }
     };
     
     // USD/KRW
     charts.usdkrw = LightweightCharts.createChart(
       document.getElementById('chart-usdkrw'), 
-      { ...chartOptions, height: 300 }
+      { ...chartOptions, height: 250 }
     );
     series.usdkrw = charts.usdkrw.addCandlestickSeries({
       upColor: '#26a69a',
@@ -371,25 +359,19 @@
       wickDownColor: '#ef4444'
     });
     
-    // 외화보유액 - 라인 차트 (깔끔)
+    // 외화보유액
     charts.reserves = LightweightCharts.createChart(
       document.getElementById('chart-reserves'), 
-      { ...chartOptions, height: 300 }
+      { ...chartOptions, height: 250 }
     );
     series.reserves = charts.reserves.addLineSeries({ 
       color: '#10b981',
-      lineWidth: 3,
-      priceLineVisible: true,
-      lastValueVisible: true
+      lineWidth: 2
     });
     
     function fetchNoCache(url) {
-      return fetch(url + (url.includes('?') ? '&' : '?') + 'v=' + BUILD_ID + '&t=' + Date.now(), {
-        cache: 'no-store',
-        headers: {
-          'Cache-Control': 'no-cache, no-store, must-revalidate',
-          'Pragma': 'no-cache'
-        }
+      return fetch(url + (url.includes('?') ? '&' : '?') + 'v=' + BUILD + '&t=' + Date.now(), {
+        cache: 'no-store'
       });
     }
     
@@ -398,11 +380,9 @@
         const res = await fetchNoCache(`/api/candles?symbol=${symbol}`);
         const data = await res.json();
         
-        console.log(`📊 ${symbol}: ${data.count}개`);
-        
         if (data.data && data.data.length > 0) {
           chartSeries.setData(data.data);
-          console.log(`✅ ${symbol} 완료`);
+          console.log(`✅ ${symbol}: ${data.count}개`);
         }
       } catch (err) {
         console.error(`❌ ${symbol}:`, err);
@@ -433,15 +413,12 @@
         const res = await fetchNoCache('/api/market/today');
         const data = await res.json();
         
-        console.log('📰 뉴스:', data.news.length);
-        
         if (data.news && data.news.length > 0) {
           const html = data.news.map(n => 
             `<li><a href="${n.url}" target="_blank">${n.title}</a></li>`
           ).join('');
           document.getElementById('news-list').innerHTML = html;
-        } else {
-          document.getElementById('news-list').innerHTML = '<li>뉴스 없음</li>';
+          console.log('✅ 뉴스:', data.news.length);
         }
       } catch (err) {
         console.error('❌ news:', err);
@@ -453,15 +430,13 @@
         const res = await fetchNoCache('/api/reserves');
         const data = await res.json();
         
-        console.log('💰 외화보유액:', data.series.length);
-        
         if (data.series && data.series.length > 0) {
           const chartData = data.series.map(d => ({
             time: d.month,
             value: d.value
           }));
           series.reserves.setData(chartData);
-          console.log('✅ 외화보유액 완료');
+          console.log('✅ 외화보유액: 12개월');
         }
       } catch (err) {
         console.error('❌ reserves:', err);
@@ -499,7 +474,7 @@
       }
     }
     
-    console.log('🚀 FX Dashboard', BUILD_ID);
+    console.log('🚀 FX Dashboard', BUILD);
     
     Promise.all([
       loadLatest(),
@@ -508,7 +483,7 @@
       loadCandles('USDKRW', series.usdkrw),
       loadCandles('DXY', series.dxy)
     ]).then(() => {
-      console.log('✅ 로딩 완료');
+      console.log('✅ 완료');
     });
     
     setInterval(() => {
