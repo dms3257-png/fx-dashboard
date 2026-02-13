@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Cache-Control" content="no-store">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="0">
-  <title>FX Dashboard v1.0.0</title>
+  <title>FX Dashboard v2.0.0</title>
   <link rel="icon" type="image/png" href="/icons/icon-192x192.png">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -68,7 +68,7 @@
     <header>
       <h1>FX Dashboard</h1>
       <div class="header-right">
-        <span class="status">● v1.0.0</span>
+        <span class="status">● v2.0.0</span>
         <span class="asof" id="header-asof">--</span>
         <a href="/api/latest" class="link" target="_blank">API</a>
       </div>
@@ -132,7 +132,7 @@
   </div>
   <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
   <script>
-    const V = '1.0.0_' + Date.now();
+    const V = '2.0.0_' + Date.now();
     const charts = {}, series = {};
     const opt = {
       layout: { background: { color: '#0f1729' }, textColor: '#94a3b8' },
