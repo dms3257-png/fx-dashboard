@@ -3,10 +3,10 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate, max-age=0">
   <meta http-equiv="Pragma" content="no-cache">
-  <meta http-equiv="Expires" content="0">
-  <title>FX Dashboard v3.0.0 (실제 데이터)</title>
+  <meta http-equiv="Expires" content="-1">
+  <title>FX Dashboard v4.0.0</title>
   <link rel="icon" type="image/png" href="/icons/icon-192x192.png">
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -15,291 +15,351 @@
       background: #0f1729; color: #e2e8f0; padding: 20px;
     }
     .container { max-width: 1600px; margin: 0 auto; }
+
     header {
       display: flex; justify-content: space-between; align-items: center;
       margin-bottom: 20px; padding-bottom: 15px; border-bottom: 1px solid #2d3748;
     }
     h1 { font-size: 1.4rem; color: #fff; display: flex; align-items: center; gap: 10px; }
-    h1::before { content: '💱'; font-size: 1.6rem; }
+    h1 img { width: 32px; height: 32px; border-radius: 6px; }
     .header-right { display: flex; gap: 15px; align-items: center; font-size: 0.85rem; }
-    .status { background: #10b981; padding: 5px 12px; border-radius: 5px; font-weight: 600; }
+    .status { background: #10b981; padding: 5px 12px; border-radius: 5px; font-weight: 600; color: #fff; }
     .asof { color: #94a3b8; }
     .link { color: #60a5fa; text-decoration: none; }
     .link:hover { text-decoration: underline; }
-    
-    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; }
-    .card { background: #1a2235; border-radius: 8px; padding: 20px; border: 1px solid #2d3748; }
+
+    /* 2열 레이아웃 */
+    .layout { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; align-items: start; }
+
+    .card { background: #1a2235; border-radius: 10px; padding: 20px; border: 1px solid #2d3748; }
+    .card + .card { margin-top: 20px; }
+
     .card-title {
-      font-size: 0.95rem; font-weight: 600; margin-bottom: 12px;
+      font-size: 0.95rem; font-weight: 600;
       display: flex; justify-content: space-between; align-items: center;
     }
     .badge {
       background: #374151; padding: 3px 8px; border-radius: 4px;
-      font-size: 0.75rem; color: #9ca3af; margin-left: 8px;
+      font-size: 0.72rem; color: #9ca3af; margin-left: 6px;
     }
-    .badge.green { background: #065f46; color: #10b981; }
-    .badge.blue { background: #1e3a8a; color: #60a5fa; }
-    .badge.orange { background: #7c2d12; color: #fb923c; }
-    
-    .chart-container { 
-      margin-top: 15px; 
-      height: 300px; 
-      background: #0f1729; 
-      border-radius: 6px; 
-      padding: 10px; 
+    .badge.green  { background: #064e3b; color: #34d399; }
+    .badge.blue   { background: #1e3a8a; color: #60a5fa; }
+    .badge.orange { background: #78350f; color: #fb923c; }
+
+    /* 차트 - 충분한 높이 + 패딩 */
+    .chart-wrap {
+      margin-top: 14px;
+      height: 260px;
+      background: #0b1120;
+      border-radius: 8px;
+      overflow: hidden;
     }
-    
-    .kpi-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 15px; margin-top: 15px; }
-    .kpi-item { background: #0f1729; padding: 12px; border-radius: 6px; border: 1px solid #2d3748; }
-    .kpi-label { font-size: 0.75rem; color: #94a3b8; margin-bottom: 5px; }
-    .kpi-value { font-size: 1.3rem; font-weight: 600; color: #fff; }
-    .note { font-size: 0.75rem; color: #64748b; margin-top: 10px; }
-    
-    .news-list { list-style: none; margin-top: 10px; max-height: 300px; overflow-y: auto; }
-    .news-list li { padding: 8px 0; border-bottom: 1px solid #2d3748; }
+
+    /* KPI */
+    .kpi-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 12px; margin-top: 14px; }
+    .kpi-item { background: #0b1120; padding: 12px 14px; border-radius: 8px; border: 1px solid #2d3748; }
+    .kpi-label { font-size: 0.72rem; color: #94a3b8; margin-bottom: 4px; }
+    .kpi-value { font-size: 1.25rem; font-weight: 700; color: #fff; }
+    .kpi-note  { font-size: 0.68rem; color: #4b5563; margin-top: 3px; }
+
+    /* 뉴스 */
+    .news-list { list-style: none; margin-top: 12px; }
+    .news-list li { padding: 7px 0; border-bottom: 1px solid #2d3748; }
     .news-list li:last-child { border-bottom: none; }
-    .news-list a { color: #e2e8f0; text-decoration: none; font-size: 0.85rem; line-height: 1.5; }
+    .news-list a { color: #cbd5e1; text-decoration: none; font-size: 0.83rem; line-height: 1.5; }
     .news-list a:hover { color: #60a5fa; }
-    
-    .ai-section {
-      margin-top: 20px; padding: 15px; background: #0f1729; border-radius: 6px;
-      border: 1px solid #2d3748; max-height: 600px; overflow-y: auto;
-    }
+
+    /* AI 분석 */
     .ai-button {
-      background: #3b82f6; color: white; border: none; padding: 10px 18px;
-      border-radius: 5px; cursor: pointer; font-size: 0.9rem; margin-bottom: 10px; font-weight: 500;
+      background: #2563eb; color: white; border: none;
+      padding: 9px 18px; border-radius: 6px; cursor: pointer;
+      font-size: 0.88rem; font-weight: 600; margin-top: 12px;
+      width: 100%;
     }
-    .ai-button:hover { background: #2563eb; }
-    .ai-button:disabled { background: #64748b; cursor: not-allowed; }
-    .ai-content { font-size: 0.9rem; line-height: 1.7; color: #cbd5e1; white-space: pre-wrap; }
-    .ai-content strong { color: #10b981; font-weight: 600; }
+    .ai-button:hover { background: #1d4ed8; }
+    .ai-button:disabled { background: #4b5563; cursor: not-allowed; }
+    .ai-box {
+      margin-top: 12px; padding: 14px;
+      background: #0b1120; border-radius: 8px;
+      border: 1px solid #2d3748;
+      max-height: 400px; overflow-y: auto;
+    }
+    .ai-content { font-size: 0.875rem; line-height: 1.75; color: #cbd5e1; white-space: pre-wrap; }
+    .ai-content strong { color: #34d399; font-weight: 700; }
+
+    .note { font-size: 0.72rem; color: #4b5563; margin-top: 8px; }
   </style>
 </head>
 <body>
-  <div class="container">
-    <header>
-      <h1>FX Dashboard</h1>
-      <div class="header-right">
-        <span class="status">● v3.0.0 실제 데이터</span>
-        <span class="asof" id="header-asof">--</span>
-        <a href="/api/latest" class="link" target="_blank">API</a>
+<div class="container">
+  <!-- 헤더 -->
+  <header>
+    <h1>
+      <img src="/icons/icon-192x192.png" alt="logo">
+      FX Dashboard
+    </h1>
+    <div class="header-right">
+      <span class="status">● v4.0.0</span>
+      <span class="asof" id="header-asof">로딩 중...</span>
+      <a href="/api/latest" class="link" target="_blank">API</a>
+    </div>
+  </header>
+
+  <div class="layout">
+    <!-- ═══════════════ 왼쪽 ═══════════════ -->
+    <div>
+      <!-- USD/KRW -->
+      <div class="card">
+        <div class="card-title">
+          <span>USD / KRW <span class="badge green">30분봉</span></span>
+          <span class="badge">네이버 금융</span>
+        </div>
+        <div class="chart-wrap" id="chart-usdkrw"></div>
       </div>
-    </header>
-    
-    <div class="layout">
-      <!-- 왼쪽 열 -->
-      <div>
-        <div class="card">
-          <div class="card-title">
-            <span>USD/KRW <span class="badge green">30분봉 실시간</span></span>
-            <span class="badge">네이버 금융</span>
-          </div>
-          <div class="chart-container" id="chart-usdkrw"></div>
+
+      <!-- EUR/KRW -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-title">
+          <span>EUR / KRW <span class="badge orange">30분봉</span></span>
+          <span class="badge">네이버 금융</span>
         </div>
-        
-        <div class="card" style="margin-top: 20px;">
-          <div class="card-title">
-            <span>EUR/KRW <span class="badge orange">30분봉 실시간</span></span>
-            <span class="badge">네이버 금융</span>
-          </div>
-          <div class="chart-container" id="chart-eurkrw"></div>
-        </div>
-        
-        <div class="card" style="margin-top: 20px;">
-          <div class="card-title">KPI Snapshot <span class="asof" id="kpi-asof">--</span></div>
-          <div class="kpi-grid">
-            <div class="kpi-item"><div class="kpi-label">USD/KRW</div><div class="kpi-value" id="kpi-usd">-</div></div>
-            <div class="kpi-item"><div class="kpi-label">EUR/KRW</div><div class="kpi-value" id="kpi-eur">-</div></div>
-            <div class="kpi-item"><div class="kpi-label">DXY</div><div class="kpi-value" id="kpi-dxy">-</div></div>
-            <div class="kpi-item"><div class="kpi-label">KR10Y</div><div class="kpi-value" id="kpi-kr10y">-</div></div>
-            <div class="kpi-item"><div class="kpi-label">US10Y</div><div class="kpi-value" id="kpi-us10y">-</div></div>
-            <div class="kpi-item"><div class="kpi-label">10Y Spread</div><div class="kpi-value" id="kpi-spread">- pp</div><div class="note">KR10Y - US10Y</div></div>
-          </div>
-        </div>
+        <div class="chart-wrap" id="chart-eurkrw"></div>
       </div>
-      
-      <!-- 오른쪽 열 -->
-      <div>
-        <div class="card">
-          <div class="card-title">
-            <span>DXY (달러인덱스) <span class="badge blue">30분봉 실시간</span></span>
-            <span class="badge">네이버 증권</span>
-          </div>
-          <div class="chart-container" id="chart-dxy"></div>
+
+      <!-- KPI -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-title">
+          KPI Snapshot
+          <span class="asof" id="kpi-asof" style="font-size:0.75rem;color:#64748b">--</span>
         </div>
-        
-        <div class="card" style="margin-top: 20px;">
-          <div class="card-title">
-            <span>외화보유액 <span class="badge blue">월별 실제</span></span>
-            <a href="/api/reserves" class="link" target="_blank">API</a>
-          </div>
-          <div class="chart-container" id="chart-reserves"></div>
-          <div class="note">단위: USD bn · 출처: 한국은행 (2026.01)</div>
-        </div>
-        
-        <div class="card" style="margin-top: 20px;">
-          <div class="card-title">
-            <span>시장 뉴스 <span class="badge">실시간</span></span>
-            <a href="https://finance.naver.com/news/mainnews.naver" class="link" target="_blank">더보기</a>
-          </div>
-          <ul class="news-list" id="news-list">
-            <li>뉴스를 불러오는 중...</li>
-          </ul>
-        </div>
-        
-        <div class="card" style="margin-top: 20px;">
-          <div class="card-title">🤖 AI 시장 분석</div>
-          <button id="ai-btn" class="ai-button" onclick="loadAIAnalysis()">🤖 AI 분석 생성</button>
-          <div class="ai-section">
-            <div class="ai-content" id="ai-content">AI 분석 버튼을 눌러 최신 시장 분석을 확인하세요.</div>
+        <div class="kpi-grid">
+          <div class="kpi-item"><div class="kpi-label">USD/KRW</div><div class="kpi-value" id="kpi-usd">-</div></div>
+          <div class="kpi-item"><div class="kpi-label">EUR/KRW</div><div class="kpi-value" id="kpi-eur">-</div></div>
+          <div class="kpi-item"><div class="kpi-label">DXY</div><div class="kpi-value" id="kpi-dxy">-</div></div>
+          <div class="kpi-item"><div class="kpi-label">KR 10Y</div><div class="kpi-value" id="kpi-kr10y">-</div></div>
+          <div class="kpi-item"><div class="kpi-label">US 10Y</div><div class="kpi-value" id="kpi-us10y">-</div></div>
+          <div class="kpi-item">
+            <div class="kpi-label">10Y Spread</div>
+            <div class="kpi-value" id="kpi-spread">-</div>
+            <div class="kpi-note">KR10Y − US10Y</div>
           </div>
         </div>
       </div>
     </div>
+
+    <!-- ═══════════════ 오른쪽 ═══════════════ -->
+    <div>
+      <!-- AI 분석 (오른쪽 맨 위) -->
+      <div class="card">
+        <div class="card-title">🤖 AI 시장 분석</div>
+        <button id="ai-btn" class="ai-button" onclick="loadAI()">🤖 AI 분석 생성</button>
+        <div class="ai-box">
+          <div class="ai-content" id="ai-content">버튼을 눌러 최신 AI 시장 분석을 확인하세요.</div>
+        </div>
+      </div>
+
+      <!-- DXY -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-title">
+          <span>DXY 달러인덱스 <span class="badge blue">30분봉</span></span>
+          <span class="badge">네이버 증권</span>
+        </div>
+        <div class="chart-wrap" id="chart-dxy"></div>
+      </div>
+
+      <!-- 외화보유액 -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-title">
+          <span>외화보유액 <span class="badge blue">월별</span></span>
+          <a href="/api/reserves" class="link" target="_blank" style="font-size:0.78rem">/api/reserves</a>
+        </div>
+        <div class="chart-wrap" id="chart-reserves"></div>
+        <div class="note">단위: USD bn &middot; 출처: 한국은행 (2025.02 ~ 2026.01)</div>
+      </div>
+
+      <!-- 뉴스 -->
+      <div class="card" style="margin-top:20px">
+        <div class="card-title">
+          <span>시장 뉴스</span>
+          <a href="https://finance.naver.com/news/mainnews.naver" class="link" target="_blank" style="font-size:0.78rem">더보기</a>
+        </div>
+        <ul class="news-list" id="news-list"><li style="color:#64748b">뉴스 로딩 중...</li></ul>
+      </div>
+    </div>
   </div>
-  
-  <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
-  <script>
-    const V = '3.0.0_' + Date.now();
-    const charts = {}, series = {};
-    const opt = {
-      layout: { background: { color: '#0f1729' }, textColor: '#94a3b8' },
-      grid: { vertLines: { color: '#2d3748' }, horzLines: { color: '#2d3748' } },
-      timeScale: { borderColor: '#2d3748', timeVisible: true },
-      rightPriceScale: { borderColor: '#2d3748' }
-    };
-    
-    // USD/KRW 차트
-    charts.usdkrw = LightweightCharts.createChart(document.getElementById('chart-usdkrw'), { ...opt, height: 300 });
-    series.usdkrw = charts.usdkrw.addCandlestickSeries({ 
-      upColor: '#26a69a', downColor: '#ef5350', 
-      borderVisible: false, 
-      wickUpColor: '#26a69a', wickDownColor: '#ef5350' 
+</div>
+
+<script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
+<script>
+  // ── 캐시 버스터 ──────────────────────────────────────
+  const V = '4.0.0_' + Date.now();
+
+  // ── 공통 차트 옵션 ───────────────────────────────────
+  const baseOpt = {
+    layout: { background: { color: '#0b1120' }, textColor: '#94a3b8' },
+    grid: { vertLines: { color: '#1e2d45' }, horzLines: { color: '#1e2d45' } },
+    timeScale: {
+      borderColor: '#2d3748',
+      timeVisible: true,
+      secondsVisible: false,
+      fixLeftEdge: true,
+      fixRightEdge: true
+    },
+    rightPriceScale: { borderColor: '#2d3748' },
+    handleScroll: false,
+    handleScale: false
+  };
+
+  function makeChart(id) {
+    const el = document.getElementById(id);
+    return LightweightCharts.createChart(el, { ...baseOpt, width: el.clientWidth, height: 260 });
+  }
+
+  // ── 차트 생성 ────────────────────────────────────────
+  const cUSD  = makeChart('chart-usdkrw');
+  const sUSD  = cUSD.addCandlestickSeries({
+    upColor: '#26a69a', downColor: '#ef5350',
+    borderUpColor: '#26a69a', borderDownColor: '#ef5350',
+    wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+  });
+
+  const cEUR  = makeChart('chart-eurkrw');
+  const sEUR  = cEUR.addCandlestickSeries({
+    upColor: '#fb923c', downColor: '#dc2626',
+    borderUpColor: '#fb923c', borderDownColor: '#dc2626',
+    wickUpColor: '#fb923c', wickDownColor: '#dc2626'
+  });
+
+  const cDXY  = makeChart('chart-dxy');
+  const sDXY  = cDXY.addCandlestickSeries({
+    upColor: '#10b981', downColor: '#ef4444',
+    borderUpColor: '#10b981', borderDownColor: '#ef4444',
+    wickUpColor: '#10b981', wickDownColor: '#ef4444'
+  });
+
+  // 외화보유액: 면적 차트 (스크린샷 스타일)
+  const cRES  = makeChart('chart-reserves');
+  const sRES  = cRES.addAreaSeries({
+    topColor:    'rgba(16, 185, 129, 0.35)',
+    bottomColor: 'rgba(16, 185, 129, 0.0)',
+    lineColor:   '#10b981',
+    lineWidth:   2,
+    priceLineVisible: true,
+    lastValueVisible: true
+  });
+
+  // 창 리사이즈 대응
+  window.addEventListener('resize', () => {
+    [
+      ['chart-usdkrw', cUSD],
+      ['chart-eurkrw', cEUR],
+      ['chart-dxy', cDXY],
+      ['chart-reserves', cRES]
+    ].forEach(([id, c]) => {
+      const el = document.getElementById(id);
+      c.applyOptions({ width: el.clientWidth });
     });
-    
-    // EUR/KRW 차트
-    charts.eurkrw = LightweightCharts.createChart(document.getElementById('chart-eurkrw'), { ...opt, height: 300 });
-    series.eurkrw = charts.eurkrw.addCandlestickSeries({ 
-      upColor: '#fb923c', downColor: '#dc2626', 
-      borderVisible: false, 
-      wickUpColor: '#fb923c', wickDownColor: '#dc2626' 
-    });
-    
-    // DXY 차트
-    charts.dxy = LightweightCharts.createChart(document.getElementById('chart-dxy'), { ...opt, height: 300 });
-    series.dxy = charts.dxy.addCandlestickSeries({ 
-      upColor: '#10b981', downColor: '#ef4444', 
-      borderVisible: false, 
-      wickUpColor: '#10b981', wickDownColor: '#ef4444' 
-    });
-    
-    // 외화보유액 차트
-    charts.reserves = LightweightCharts.createChart(document.getElementById('chart-reserves'), { ...opt, height: 300 });
-    series.reserves = charts.reserves.addLineSeries({ 
-      color: '#3b82f6', 
-      lineWidth: 3,
-      priceLineVisible: true,
-      lastValueVisible: true
-    });
-    
-    function f(u) { return fetch(u + (u.includes('?') ? '&' : '?') + 'v=' + V, { cache: 'no-store' }); }
-    
-    async function loadCandles(s, cs) {
-      try {
-        const r = await f(`/api/candles?symbol=${s}`);
-        const d = await r.json();
-        if (d.data && d.data.length > 0) { 
-          cs.setData(d.data); 
-          console.log(`✅ ${s}: ${d.count}개 (실제 크롤링 기반)`); 
-        }
-      } catch (e) { console.error(`❌ ${s}:`, e); }
-    }
-    
-    async function loadLatest() {
-      try {
-        const r = await f('/api/latest');
-        const d = await r.json();
-        document.getElementById('header-asof').textContent = d.asofKST || '--';
-        document.getElementById('kpi-asof').textContent = d.asofKST || '--';
-        document.getElementById('kpi-usd').textContent = d.USDKRW ? d.USDKRW.toFixed(2) : '-';
-        document.getElementById('kpi-eur').textContent = d.EURKRW ? d.EURKRW.toFixed(2) : '-';
-        document.getElementById('kpi-dxy').textContent = d.DXY ? d.DXY.toFixed(2) : '-';
-        document.getElementById('kpi-kr10y').textContent = d.KR10Y ? d.KR10Y.toFixed(2) + '%' : '-';
-        document.getElementById('kpi-us10y').textContent = d.US10Y ? d.US10Y.toFixed(2) + '%' : '-';
-        document.getElementById('kpi-spread').textContent = d.spread10y !== undefined ? d.spread10y.toFixed(2) + ' pp' : '- pp';
-        console.log('✅ 최신 데이터 (실제 크롤링):', d);
-      } catch (e) { console.error('❌ Latest:', e); }
-    }
-    
-    async function loadNews() {
-      try {
-        const r = await f('/api/market/today');
-        const d = await r.json();
-        const list = document.getElementById('news-list');
-        if (d.news && d.news.length > 0) {
-          list.innerHTML = d.news.map(n => `<li><a href="${n.url}" target="_blank">${n.title}</a></li>`).join('');
-          console.log('✅ 뉴스:', d.news.length + '개');
-        }
-      } catch (e) { console.error('❌ News:', e); }
-    }
-    
-    async function loadReserves() {
-      try {
-        const r = await f('/api/reserves');
-        const d = await r.json();
-        if (d.series && d.series.length > 0) {
-          const data = d.series.map(s => ({
-            time: s.month,
-            value: s.value
-          }));
-          series.reserves.setData(data);
-          console.log('✅ 외화보유액:', d.series.length + '개월 (실제 한국은행 데이터)');
-        }
-      } catch (e) { console.error('❌ Reserves:', e); }
-    }
-    
-    async function loadAIAnalysis() {
-      const btn = document.getElementById('ai-btn');
-      const content = document.getElementById('ai-content');
-      btn.disabled = true;
-      btn.textContent = '⏳ AI 분석 중...';
-      content.textContent = '실제 시장 데이터를 심층 분석하고 있습니다...';
-      try {
-        const r = await f('/api/analysis');
-        const d = await r.json();
-        if (d.analysis) {
-          content.innerHTML = d.analysis.replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>').replace(/\n/g, '<br>');
-          btn.textContent = '✅ 분석 완료';
-        } else if (d.error) {
-          content.textContent = `⚠️ ${d.error}`;
-          btn.textContent = '🤖 AI 분석 생성';
-          btn.disabled = false;
-        }
-      } catch (e) {
-        console.error('❌ AI:', e);
-        content.textContent = '⚠️ 분석 실패';
-        btn.textContent = '🤖 AI 분석 생성';
-        btn.disabled = false;
+  });
+
+  // ── fetch 헬퍼 ───────────────────────────────────────
+  function f(u) {
+    const sep = u.includes('?') ? '&' : '?';
+    return fetch(u + sep + '_v=' + V, { cache: 'no-store', headers: { 'Cache-Control': 'no-cache' } });
+  }
+
+  // ── 캔들 로드 ────────────────────────────────────────
+  async function loadCandles(sym, series, chart) {
+    try {
+      const d = await (await f(`/api/candles?symbol=${sym}`)).json();
+      if (d.data && d.data.length > 0) {
+        series.setData(d.data);
+        chart.timeScale().fitContent(); // 캔들이 차트에 꽉 차게
+        console.log(`✅ ${sym}: ${d.count}개`);
       }
+    } catch (e) { console.error(`❌ ${sym}:`, e); }
+  }
+
+  // ── 최신 KPI ────────────────────────────────────────
+  async function loadLatest() {
+    try {
+      const d = await (await f('/api/latest')).json();
+      document.getElementById('header-asof').textContent = d.asofKST || '--';
+      document.getElementById('kpi-asof').textContent   = d.asofKST || '--';
+      document.getElementById('kpi-usd').textContent    = d.USDKRW  ? d.USDKRW.toFixed(2)  : '-';
+      document.getElementById('kpi-eur').textContent    = d.EURKRW  ? d.EURKRW.toFixed(2)  : '-';
+      document.getElementById('kpi-dxy').textContent    = d.DXY     ? d.DXY.toFixed(2)     : '-';
+      document.getElementById('kpi-kr10y').textContent  = d.KR10Y   ? d.KR10Y.toFixed(2) + '%' : '-';
+      document.getElementById('kpi-us10y').textContent  = d.US10Y   ? d.US10Y.toFixed(2) + '%' : '-';
+      document.getElementById('kpi-spread').textContent = d.spread10y != null ? d.spread10y.toFixed(2) + ' pp' : '-';
+    } catch (e) { console.error('❌ Latest:', e); }
+  }
+
+  // ── 뉴스 ────────────────────────────────────────────
+  async function loadNews() {
+    try {
+      const d = await (await f('/api/market/today')).json();
+      const ul = document.getElementById('news-list');
+      if (d.news && d.news.length > 0)
+        ul.innerHTML = d.news.map(n => `<li><a href="${n.url}" target="_blank">${n.title}</a></li>`).join('');
+    } catch (e) { console.error('❌ News:', e); }
+  }
+
+  // ── 외화보유액 ───────────────────────────────────────
+  async function loadReserves() {
+    try {
+      const d = await (await f('/api/reserves')).json();
+      if (d.series && d.series.length > 0) {
+        sRES.setData(d.series.map(s => ({ time: s.month, value: s.value })));
+        cRES.timeScale().fitContent();
+        console.log('✅ 외화보유액:', d.series.length + '개월');
+      }
+    } catch (e) { console.error('❌ Reserves:', e); }
+  }
+
+  // ── AI 분석 ─────────────────────────────────────────
+  async function loadAI() {
+    const btn = document.getElementById('ai-btn');
+    const box = document.getElementById('ai-content');
+    btn.disabled = true;
+    btn.textContent = '⏳ 분석 중...';
+    box.textContent = '시장 데이터를 심층 분석하고 있습니다...';
+    try {
+      const d = await (await f('/api/analysis')).json();
+      if (d.analysis) {
+        box.innerHTML = d.analysis
+          .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+          .replace(/\n/g, '<br>');
+        btn.textContent = '✅ 분석 완료';
+      } else {
+        box.textContent = '⚠️ ' + (d.error || '분석 실패');
+        btn.disabled = false;
+        btn.textContent = '🤖 AI 분석 생성';
+      }
+    } catch (e) {
+      box.textContent = '⚠️ 오류 발생';
+      btn.disabled = false;
+      btn.textContent = '🤖 AI 분석 생성';
     }
-    
-    console.log('🚀 FX Dashboard v3.0.0 (실제 크롤링 데이터)', V);
-    Promise.all([
-      loadLatest(), 
-      loadNews(), 
-      loadReserves(), 
-      loadCandles('USDKRW', series.usdkrw),
-      loadCandles('EURKRW', series.eurkrw),
-      loadCandles('DXY', series.dxy)
-    ]).then(() => console.log('✅ 모든 실제 데이터 로딩 완료'));
-    
-    // 1분마다 자동 갱신
-    setInterval(() => { 
-      loadLatest(); 
-      loadCandles('USDKRW', series.usdkrw); 
-      loadCandles('EURKRW', series.eurkrw);
-      loadCandles('DXY', series.dxy); 
-    }, 60000);
-  </script>
+  }
+
+  // ── 초기 로드 ────────────────────────────────────────
+  console.log('🚀 FX Dashboard v4.0.0 캐시버스터:', V);
+  Promise.all([
+    loadLatest(),
+    loadNews(),
+    loadReserves(),
+    loadCandles('USDKRW', sUSD, cUSD),
+    loadCandles('EURKRW', sEUR, cEUR),
+    loadCandles('DXY',    sDXY, cDXY)
+  ]).then(() => console.log('✅ 전체 로드 완료'));
+
+  // 1분마다 자동 갱신
+  setInterval(() => {
+    loadLatest();
+    loadCandles('USDKRW', sUSD, cUSD);
+    loadCandles('EURKRW', sEUR, cEUR);
+    loadCandles('DXY',    sDXY, cDXY);
+  }, 60000);
+</script>
 </body>
 </html>
