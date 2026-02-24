@@ -17,17 +17,26 @@ app.use((req, res, next) => {
   next();
 });
 
-// ─── / 전용 라우트: 타임스탬프 파라미터 없으면 리디렉션 ─
-// 브라우저가 캐시된 구버전을 보여줄 때도, JS가 실행되어
-// 새 URL(_t=타임스탬프)로 이동 → 캐시 미스 → 서버에서 신선한 HTML 수신
+// ─── 캐시 완전 우회: / → /fx 리디렉션 ─────────────────
+// 핵심 원리: 브라우저가 /에 구버전 HTML을 캐시하고 있어도
+// /fx는 한 번도 캐시된 적 없는 새 URL → 항상 서버에서 수신
 app.get('/', (req, res) => {
+  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
+  res.setHeader('Pragma', 'no-cache');
+  res.setHeader('Expires', '-1');
+  // 302 리디렉션 (브라우저가 캐시 안 함)
+  res.redirect(302, '/fx');
+});
+
+// /fx : 실제 대시보드 서빙 (no-cache)
+app.get('/fx', (req, res) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '-1');
   res.sendFile(path.join(__dirname, 'public', 'index.html'));
 });
 
-// 정적 파일 (index.html 제외한 나머지: icons, js 등)
+// 정적 파일 (icons, sw.js 등)
 app.use(express.static('public', { index: false, etag: false, maxAge: 0, lastModified: false }));
 
 // ─── 데이터 저장소 ────────────────────────────────────
@@ -224,3 +233,5 @@ app.get('/api/analysis', async (_, res) => {
     res.json({ version: '5.0.0', analysis, cached: false });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
+
+
