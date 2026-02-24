@@ -14,7 +14,6 @@
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
         .then(reg => {
-          // 새 버전 SW가 있으면 즉시 활성화
           reg.addEventListener('updatefound', () => {
             const nw = reg.installing;
             nw.addEventListener('statechange', () => {
@@ -27,11 +26,11 @@
     }
   </script>
 
-  <!-- ★ 방어 2: 구버전 캐시 HTML이 로드됐을 때 JS로 강제 새 URL 이동 -->
+  <!-- ★ 방어 2: /fx 경로에서 _v= 없으면 새 타임스탬프로 리디렉션 -->
   <script>
     (function() {
       if (location.search.indexOf('_v=') === -1) {
-        location.replace(location.pathname + '?_v=' + Date.now());
+        location.replace('/fx?_v=' + Date.now());
       }
     })();
   </script>
