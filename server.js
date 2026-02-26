@@ -233,5 +233,3 @@ app.get('/api/analysis', async (_, res) => {
     res.json({ version: '5.0.0', analysis, cached: false });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
-
-
