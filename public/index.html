@@ -9,14 +9,47 @@
   <title>FX Dashboard</title>
   <link rel="icon" type="image/png" href="/icons/icon-192x192.png">
 
-  <!-- ★ 방어 1: Service Worker 등록 (브라우저 캐시 가로채기) -->
+  <!-- ══════════════════════════════════════════════════
+       ① BUILD_ID 기반 자동 갱신 (핵심 캐시 해결책)
+       서버가 재배포될 때마다 BUILD_ID가 바뀌고,
+       캐시된 구버전 HTML이 로드되어도 이 스크립트가
+       /api/version을 조회해 다르면 즉시 최신으로 교체.
+       ══════════════════════════════════════════════════ -->
+  <script>
+    (function () {
+      // 서버가 HTML을 내려줄 때 REPLACE_BUILD_ID를 실제 값으로 치환
+      var MY_BUILD = 'REPLACE_BUILD_ID';
+
+      // _v= 없으면 먼저 추가 (쿼리 파라미터 캐시 버스팅)
+      if (location.search.indexOf('_v=') === -1) {
+        location.replace('/fx?_v=' + Date.now());
+        return; // 이후 코드 실행 안 함
+      }
+
+      // 서버의 현재 BUILD_ID 확인 (no-store 강제)
+      fetch('/api/version?_=' + Date.now(), {
+        cache: 'no-store',
+        headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+      })
+        .then(function (r) { return r.json(); })
+        .then(function (d) {
+          if (d.buildId && d.buildId !== MY_BUILD) {
+            // BUILD_ID 불일치 → 최신 버전으로 즉시 교체
+            location.replace('/fx?_v=' + Date.now());
+          }
+        })
+        .catch(function () { /* 네트워크 오류 시 무시 */ });
+    })();
+  </script>
+
+  <!-- ② Service Worker 등록 (2차 방어선) -->
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/sw.js', { updateViaCache: 'none' })
-        .then(reg => {
-          reg.addEventListener('updatefound', () => {
-            const nw = reg.installing;
-            nw.addEventListener('statechange', () => {
+        .then(function (reg) {
+          reg.addEventListener('updatefound', function () {
+            var nw = reg.installing;
+            nw.addEventListener('statechange', function () {
               if (nw.state === 'installed' && navigator.serviceWorker.controller) {
                 window.location.reload();
               }
@@ -26,101 +59,134 @@
     }
   </script>
 
-  <!-- ★ 방어 2: /fx 경로에서 _v= 없으면 새 타임스탬프로 리디렉션 -->
-  <script>
-    (function() {
-      if (location.search.indexOf('_v=') === -1) {
-        location.replace('/fx?_v=' + Date.now());
-      }
-    })();
-  </script>
-
   <style>
     * { margin: 0; padding: 0; box-sizing: border-box; }
     body {
       font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Malgun Gothic", sans-serif;
-      background: #0f172a; color: #e2e8f0; padding: 20px;
+      background: #0f172a; color: #e2e8f0; padding: 16px; min-width: 1100px;
     }
-    .container { max-width: 1600px; margin: 0 auto; }
+    .container { max-width: 1800px; margin: 0 auto; }
 
+    /* ── 헤더 ── */
     header {
       display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 24px; padding-bottom: 16px;
-      border-bottom: 1px solid #1e293b;
+      margin-bottom: 18px; padding-bottom: 14px; border-bottom: 1px solid #1e293b;
     }
     .logo { display: flex; align-items: center; gap: 10px; }
-    .logo img { width: 32px; height: 32px; border-radius: 6px; }
-    .logo-text { font-size: 1.3rem; font-weight: 700; color: #f1f5f9; }
-    .header-right { display: flex; gap: 12px; align-items: center; font-size: 0.82rem; }
-    .badge-live { background: #10b981; color: #fff; padding: 4px 10px; border-radius: 20px; font-weight: 700; font-size: 0.75rem; }
-    .asof-txt { color: #64748b; }
-    .api-link { color: #60a5fa; text-decoration: none; font-size: 0.78rem; }
-    .api-link:hover { text-decoration: underline; }
+    .logo img { width: 30px; height: 30px; border-radius: 6px; }
+    .logo-text { font-size: 1.25rem; font-weight: 700; color: #f1f5f9; }
+    .header-right { display: flex; gap: 10px; align-items: center; }
+    .badge-live { background: #10b981; color: #fff; padding: 3px 10px; border-radius: 20px; font-weight: 700; font-size: 0.72rem; }
+    .asof-txt { color: #64748b; font-size: 0.8rem; }
+    .api-link { color: #60a5fa; text-decoration: none; font-size: 0.75rem; }
 
-    .grid { display: grid; grid-template-columns: 1fr 1fr; gap: 18px; align-items: start; }
+    /* ── 3컬럼 그리드 ── */
+    .pg { display: grid; grid-template-columns: 290px 1fr 1fr; gap: 16px; align-items: start; }
 
+    /* ── 카드 ── */
     .card {
-      background: #1e293b; border-radius: 12px;
-      padding: 18px; border: 1px solid #334155;
+      background: #1e293b; border-radius: 10px; padding: 16px; border: 1px solid #334155;
     }
-    .card + .card { margin-top: 18px; }
+    .card + .card { margin-top: 16px; }
     .card-head {
-      display: flex; justify-content: space-between; align-items: center;
-      margin-bottom: 14px;
+      display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;
     }
-    .card-head-left { display: flex; align-items: center; gap: 8px; }
-    .card-title { font-size: 0.92rem; font-weight: 700; color: #f1f5f9; }
-    .tag {
-      font-size: 0.7rem; padding: 2px 8px; border-radius: 20px; font-weight: 600;
-    }
+    .card-title { font-size: 0.88rem; font-weight: 700; color: #f1f5f9; }
+    .tag { font-size: 0.68rem; padding: 2px 7px; border-radius: 20px; font-weight: 600; }
     .tag-green  { background: #064e3b; color: #34d399; }
     .tag-orange { background: #78350f; color: #fb923c; }
     .tag-blue   { background: #1e3a8a; color: #60a5fa; }
     .tag-gray   { background: #334155; color: #94a3b8; }
 
+    /* ── 캔들 차트 ── */
     .chart-box {
-      width: 100%; height: 260px;
-      border-radius: 8px; overflow: hidden;
-      background: #0f172a;
+      width: 100%; height: 230px; border-radius: 6px; overflow: hidden; background: #0f172a;
     }
 
-    .kpi-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 10px; }
-    .kpi { background: #0f172a; border-radius: 8px; padding: 12px 14px; border: 1px solid #334155; }
-    .kpi-lbl { font-size: 0.7rem; color: #64748b; margin-bottom: 4px; text-transform: uppercase; letter-spacing: .03em; }
-    .kpi-val { font-size: 1.2rem; font-weight: 700; color: #f1f5f9; }
-    .kpi-sub { font-size: 0.65rem; color: #475569; margin-top: 3px; }
+    /* ── KPI ── */
+    .kpi-grid { display: grid; grid-template-columns: repeat(3,1fr); gap: 8px; }
+    .kpi { background: #0f172a; border-radius: 7px; padding: 10px 12px; border: 1px solid #334155; }
+    .kpi-lbl { font-size: 0.65rem; color: #64748b; margin-bottom: 3px; text-transform: uppercase; letter-spacing: .04em; }
+    .kpi-val { font-size: 1.1rem; font-weight: 700; color: #f1f5f9; }
+    .kpi-sub { font-size: 0.62rem; color: #475569; margin-top: 2px; }
 
+    /* ── 뉴스 ── */
     .news-ul { list-style: none; }
-    .news-ul li { padding: 8px 0; border-bottom: 1px solid #1e293b; }
+    .news-ul li { padding: 6px 0; border-bottom: 1px solid #1e293b; }
     .news-ul li:last-child { border-bottom: none; }
-    .news-ul a { color: #cbd5e1; text-decoration: none; font-size: 0.82rem; line-height: 1.55; display: block; }
+    .news-ul a { color: #cbd5e1; text-decoration: none; font-size: 0.78rem; line-height: 1.5; display: block; }
     .news-ul a:hover { color: #60a5fa; }
 
+    /* ── AI 분석 ── */
     .ai-btn {
-      width: 100%; margin-top: 4px;
-      background: #2563eb; color: #fff; border: none;
-      padding: 10px; border-radius: 8px; cursor: pointer;
-      font-size: 0.88rem; font-weight: 700; transition: background .15s;
+      width: 100%; margin-top: 4px; background: #2563eb; color: #fff; border: none;
+      padding: 9px; border-radius: 7px; cursor: pointer; font-size: 0.85rem; font-weight: 700;
+      transition: background .15s;
     }
     .ai-btn:hover   { background: #1d4ed8; }
     .ai-btn:disabled { background: #475569; cursor: not-allowed; }
-    .ai-body {
-      margin-top: 12px; padding: 14px;
-      background: #0f172a; border-radius: 8px;
-      border: 1px solid #334155;
-      max-height: 380px; overflow-y: auto;
+    .ai-box {
+      margin-top: 10px; padding: 12px; background: #0f172a; border-radius: 7px;
+      border: 1px solid #334155; max-height: 340px; overflow-y: auto;
     }
-    .ai-txt { font-size: 0.85rem; line-height: 1.8; color: #cbd5e1; white-space: pre-wrap; }
+    .ai-txt { font-size: 0.8rem; line-height: 1.75; color: #cbd5e1; white-space: pre-wrap; }
     .ai-txt strong { color: #34d399; font-weight: 700; }
-    .foot-note { font-size: 0.68rem; color: #475569; margin-top: 8px; }
+
+    /* ── 파이 차트 ── */
+    .pie-canvas-wrap {
+      display: flex; justify-content: center; align-items: center; padding: 10px 0 6px;
+    }
+    .pie-legend { margin-top: 8px; }
+    .legend-item {
+      display: flex; align-items: center; gap: 8px;
+      padding: 5px 0; border-bottom: 1px solid #1e293b; font-size: 0.78rem;
+    }
+    .legend-item:last-child { border-bottom: none; }
+    .legend-dot  { width: 12px; height: 12px; border-radius: 3px; flex-shrink: 0; }
+    .legend-name { flex: 1; color: #cbd5e1; }
+    .legend-val  { color: #94a3b8; font-size: 0.72rem; }
+    .legend-pct  { color: #f1f5f9; font-weight: 700; min-width: 42px; text-align: right; }
+
+    /* ── 입력 영역 ── */
+    .input-area { margin-top: 10px; }
+    .input-row {
+      display: flex; gap: 6px; align-items: center; margin-bottom: 6px;
+    }
+    .input-row select, .input-row input[type="text"],
+    .input-row input[type="number"] {
+      background: #0f172a; border: 1px solid #334155; color: #e2e8f0;
+      border-radius: 5px; padding: 5px 8px; font-size: 0.78rem; outline: none;
+    }
+    .input-row select { width: 80px; }
+    .input-row input[type="text"]   { flex: 1; }
+    .input-row input[type="number"] { width: 90px; }
+    .input-row input:focus { border-color: #60a5fa; }
+    .btn-add {
+      background: #334155; color: #cbd5e1; border: none;
+      padding: 5px 10px; border-radius: 5px; cursor: pointer; font-size: 0.75rem; white-space: nowrap;
+    }
+    .btn-add:hover { background: #475569; }
+    .btn-update {
+      width: 100%; background: #2563eb; color: #fff; border: none;
+      padding: 7px; border-radius: 6px; cursor: pointer; font-size: 0.8rem; font-weight: 700; margin-top: 6px;
+    }
+    .btn-update:hover { background: #1d4ed8; }
+    .btn-del {
+      background: #7f1d1d; color: #fca5a5; border: none;
+      padding: 3px 7px; border-radius: 4px; cursor: pointer; font-size: 0.7rem;
+    }
+    .empty-msg { text-align: center; color: #475569; font-size: 0.78rem; padding: 20px 0; }
+    .foot-note { font-size: 0.65rem; color: #475569; margin-top: 6px; }
+    .divider { height: 1px; background: #1e293b; margin: 10px 0; }
   </style>
 </head>
 <body>
 <div class="container">
 
+  <!-- 헤더 -->
   <header>
     <div class="logo">
-      <img src="/icons/icon-192x192.png" alt="FX">
+      <img src="/icons/icon-192x192.png" alt="SUAN FOOD">
       <span class="logo-text">FX Dashboard</span>
     </div>
     <div class="header-right">
@@ -130,35 +196,87 @@
     </div>
   </header>
 
-  <div class="grid">
-    <!-- ══ 왼쪽 ══ -->
+  <div class="pg">
+
+    <!-- ══════════ 왼쪽: 파이차트 패널 ══════════ -->
     <div>
+
+      <!-- 외환 보유 현황 -->
       <div class="card">
         <div class="card-head">
-          <div class="card-head-left">
+          <span class="card-title">💰 외환 보유 현황</span>
+          <span class="tag tag-green">수동 입력</span>
+        </div>
+        <div class="pie-canvas-wrap"><canvas id="pie-fx" width="180" height="180"></canvas></div>
+        <div id="legend-fx" class="pie-legend"><div class="empty-msg">아래에서 보유 외환을 입력하세요</div></div>
+        <div class="divider"></div>
+        <div class="input-area">
+          <div class="input-row">
+            <select id="fx-cur">
+              <option>USD</option><option>EUR</option><option>JPY</option>
+              <option>CNY</option><option>GBP</option><option>기타</option>
+            </select>
+            <input type="number" id="fx-amt" placeholder="금액" min="0" step="0.01">
+            <button class="btn-add" onclick="addFxItem()">추가</button>
+          </div>
+          <div id="fx-items"></div>
+          <button class="btn-update" onclick="updateFxChart()">차트 업데이트</button>
+        </div>
+      </div>
+
+      <!-- 수안푸드 재고 -->
+      <div class="card" style="margin-top:16px">
+        <div class="card-head">
+          <span class="card-title">📦 수안푸드 재고</span>
+          <span class="tag tag-orange">수동 입력</span>
+        </div>
+        <div class="pie-canvas-wrap"><canvas id="pie-inv" width="180" height="180"></canvas></div>
+        <div id="legend-inv" class="pie-legend"><div class="empty-msg">아래에서 재고를 입력하세요</div></div>
+        <div class="divider"></div>
+        <div class="input-area">
+          <div class="input-row">
+            <input type="text"   id="inv-name" placeholder="품목명" style="flex:1">
+            <input type="number" id="inv-qty"  placeholder="수량" min="0">
+            <button class="btn-add" onclick="addInvItem()">추가</button>
+          </div>
+          <div id="inv-items"></div>
+          <button class="btn-update" onclick="updateInvChart()">차트 업데이트</button>
+        </div>
+      </div>
+
+    </div>
+
+    <!-- ══════════ 가운데 ══════════ -->
+    <div>
+      <!-- USD/KRW -->
+      <div class="card">
+        <div class="card-head">
+          <div style="display:flex;align-items:center;gap:7px">
             <span class="card-title">USD / KRW</span>
-            <span class="tag tag-green">30분봉</span>
+            <span class="tag tag-green">30분봉 KST</span>
           </div>
           <span class="tag tag-gray">네이버 금융</span>
         </div>
         <div class="chart-box" id="c-usd"></div>
       </div>
 
-      <div class="card" style="margin-top:18px">
+      <!-- EUR/KRW -->
+      <div class="card" style="margin-top:16px">
         <div class="card-head">
-          <div class="card-head-left">
+          <div style="display:flex;align-items:center;gap:7px">
             <span class="card-title">EUR / KRW</span>
-            <span class="tag tag-orange">30분봉</span>
+            <span class="tag tag-orange">30분봉 KST</span>
           </div>
           <span class="tag tag-gray">네이버 금융</span>
         </div>
         <div class="chart-box" id="c-eur"></div>
       </div>
 
-      <div class="card" style="margin-top:18px">
+      <!-- KPI Snapshot -->
+      <div class="card" style="margin-top:16px">
         <div class="card-head">
           <span class="card-title">KPI Snapshot</span>
-          <span class="asof-txt" id="kpi-time" style="font-size:0.72rem">--</span>
+          <span class="asof-txt" id="kpi-time" style="font-size:0.7rem">--</span>
         </div>
         <div class="kpi-grid">
           <div class="kpi"><div class="kpi-lbl">USD/KRW</div><div class="kpi-val" id="v-usd">-</div></div>
@@ -175,43 +293,47 @@
       </div>
     </div>
 
-    <!-- ══ 오른쪽 ══ -->
+    <!-- ══════════ 오른쪽 ══════════ -->
     <div>
+      <!-- AI 분석 (최상단) -->
       <div class="card">
         <div class="card-head">
-          <span class="card-title">🤖 AI 시장 분석</span>
+          <span class="card-title">AI 시장 분석</span>
           <span class="tag tag-blue">Gemini 2.5</span>
         </div>
-        <button id="ai-btn" class="ai-btn" onclick="runAI()">🤖 AI 분석 생성</button>
-        <div class="ai-body">
+        <button id="ai-btn" class="ai-btn" onclick="runAI()">AI 분석 생성</button>
+        <div class="ai-box">
           <div class="ai-txt" id="ai-txt">버튼을 눌러 최신 시장 분석을 확인하세요.</div>
         </div>
       </div>
 
-      <div class="card" style="margin-top:18px">
+      <!-- DXY -->
+      <div class="card" style="margin-top:16px">
         <div class="card-head">
-          <div class="card-head-left">
+          <div style="display:flex;align-items:center;gap:7px">
             <span class="card-title">DXY 달러인덱스</span>
-            <span class="tag tag-blue">30분봉</span>
+            <span class="tag tag-blue">30분봉 KST</span>
           </div>
           <span class="tag tag-gray">네이버 증권</span>
         </div>
         <div class="chart-box" id="c-dxy"></div>
       </div>
 
-      <div class="card" style="margin-top:18px">
+      <!-- 외화보유액 -->
+      <div class="card" style="margin-top:16px">
         <div class="card-head">
-          <div class="card-head-left">
+          <div style="display:flex;align-items:center;gap:7px">
             <span class="card-title">외화보유액</span>
             <span class="tag tag-blue">월별</span>
           </div>
           <a href="/api/reserves" class="api-link" target="_blank">/api/reserves</a>
         </div>
         <div class="chart-box" id="c-res"></div>
-        <div class="foot-note">단위: USD bn · 출처: 한국은행 (2025.02 ~ 2026.01)</div>
+        <div class="foot-note">단위: USD bn · 출처: 한국은행 (2025.02~2026.01)</div>
       </div>
 
-      <div class="card" style="margin-top:18px">
+      <!-- 뉴스 -->
+      <div class="card" style="margin-top:16px">
         <div class="card-head">
           <span class="card-title">시장 뉴스</span>
           <a href="https://finance.naver.com/news/mainnews.naver" class="api-link" target="_blank">더보기 →</a>
@@ -219,105 +341,144 @@
         <ul class="news-ul" id="news"><li style="color:#475569">뉴스 로딩 중...</li></ul>
       </div>
     </div>
-  </div>
+
+  </div><!-- /pg -->
 </div>
 
+<!-- ── 라이브러리 ── -->
 <script src="https://unpkg.com/lightweight-charts@4.2.1/dist/lightweight-charts.standalone.production.js"></script>
-<script>
-const _V = '5.0.0_' + Date.now();
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
 
+<script>
+// ════════════════════════════════════════════════════
+//  공통 유틸
+// ════════════════════════════════════════════════════
+const _V  = 'v7_' + Date.now();
+const KST = 9 * 3600; // 초 단위 (Lightweight Charts는 초 단위)
+
+function req(url) {
+  const sep = url.includes('?') ? '&' : '?';
+  return fetch(url + sep + '_v=' + _V, {
+    cache: 'no-store',
+    headers: { 'Cache-Control': 'no-cache', 'Pragma': 'no-cache' }
+  });
+}
+
+// ════════════════════════════════════════════════════
+//  Lightweight Charts 캔들스틱
+// ════════════════════════════════════════════════════
 function makeChart(id) {
   const el = document.getElementById(id);
   const chart = LightweightCharts.createChart(el, {
-    width: el.clientWidth, height: 260,
-    layout: { background: { color: '#0f172a' }, textColor: '#64748b' },
-    grid: { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
+    width:  el.clientWidth,
+    height: 230,
+    layout: { background: { color: '#0f172a' }, textColor: '#94a3b8' },
+    grid:   { vertLines: { color: '#1e293b' }, horzLines: { color: '#1e293b' } },
     timeScale: {
-      borderColor: '#334155', timeVisible: true, secondsVisible: false,
-      fixLeftEdge: true, fixRightEdge: true,
-      barSpacing: 18, minBarSpacing: 8
+      borderColor: '#334155',
+      timeVisible: true,
+      secondsVisible: false,
+      fixLeftEdge:  true,
+      fixRightEdge: true,
+      barSpacing: 22,      // 넓은 간격 → 깔끔한 시각
+      minBarSpacing: 10,
+      tickMarkFormatter: (time) => {
+        // time은 이미 KST로 보정된 Unix초 → 시:분 표시
+        const d = new Date(time * 1000);
+        const h = String(d.getUTCHours()).padStart(2, '0');
+        const m = String(d.getUTCMinutes()).padStart(2, '0');
+        return h + ':' + m;
+      }
     },
     rightPriceScale: {
       borderColor: '#334155',
-      scaleMargins: { top: 0.08, bottom: 0.08 }
+      scaleMargins: { top: 0.10, bottom: 0.10 }
     },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    handleScroll: { mouseWheel: false, pressedMouseMove: false },
-    handleScale:  { mouseWheel: false, pinch: false, axisPressedMouseMove: false }
+    handleScroll: false,
+    handleScale:  false
   });
-  new ResizeObserver(() => chart.applyOptions({ width: el.clientWidth })).observe(el);
+  new ResizeObserver(() => {
+    chart.applyOptions({ width: el.clientWidth });
+    chart.timeScale().fitContent();
+  }).observe(el);
   return chart;
 }
 
+// ── 차트 인스턴스 생성 ────────────────────────────────
 const chUSD = makeChart('c-usd');
 const sUSD  = chUSD.addCandlestickSeries({
   upColor: '#26a69a', downColor: '#ef5350',
   borderUpColor: '#26a69a', borderDownColor: '#ef5350',
-  wickUpColor: '#26a69a', wickDownColor: '#ef5350'
+  wickUpColor:   '#26a69a', wickDownColor:   '#ef5350'
 });
 
 const chEUR = makeChart('c-eur');
 const sEUR  = chEUR.addCandlestickSeries({
   upColor: '#fb923c', downColor: '#dc2626',
   borderUpColor: '#fb923c', borderDownColor: '#dc2626',
-  wickUpColor: '#fb923c', wickDownColor: '#dc2626'
+  wickUpColor:   '#fb923c', wickDownColor:   '#dc2626'
 });
 
 const chDXY = makeChart('c-dxy');
 const sDXY  = chDXY.addCandlestickSeries({
   upColor: '#34d399', downColor: '#f87171',
   borderUpColor: '#34d399', borderDownColor: '#f87171',
-  wickUpColor: '#34d399', wickDownColor: '#f87171'
+  wickUpColor:   '#34d399', wickDownColor:   '#f87171'
 });
 
 const chRES = makeChart('c-res');
 const sRES  = chRES.addAreaSeries({
-  topColor: 'rgba(16,185,129,0.3)', bottomColor: 'rgba(16,185,129,0.0)',
-  lineColor: '#10b981', lineWidth: 2,
-  priceLineVisible: true, lastValueVisible: true
+  topColor:    'rgba(16,185,129,0.3)',
+  bottomColor: 'rgba(16,185,129,0)',
+  lineColor:   '#10b981',
+  lineWidth: 2,
+  priceLineVisible: true,
+  lastValueVisible: true
 });
 
-function req(url) {
-  const sep = url.includes('?') ? '&' : '?';
-  return fetch(url + sep + '_v=' + _V, {
-    cache: 'no-store',
-    headers: { 'Cache-Control': 'no-cache, no-store' }
-  });
-}
-
+// ── 캔들 로드 (KST 보정) ─────────────────────────────
+// 서버는 UTC Unix초를 반환 → +KST(9h) 해서 KST 시간으로 표시
 async function loadCandles(sym, series, chart) {
   try {
     const d = await (await req('/api/candles?symbol=' + sym)).json();
     if (d.data && d.data.length) {
-      series.setData(d.data);
+      const kst = d.data.map(c => ({
+        time:  c.time + KST,
+        open:  c.open, high: c.high, low: c.low, close: c.close
+      }));
+      series.setData(kst);
       chart.timeScale().fitContent();
     }
-  } catch(e) { console.error('candles', sym, e); }
+  } catch(e) { console.error('candles error:', sym, e); }
 }
 
+// ── KPI 업데이트 ─────────────────────────────────────
 async function loadLatest() {
   try {
     const d = await (await req('/api/latest')).json();
     document.getElementById('hd-asof').textContent  = d.asofKST || '--';
     document.getElementById('kpi-time').textContent = d.asofKST || '--';
-    document.getElementById('v-usd').textContent    = d.USDKRW  ? d.USDKRW.toFixed(2)    : '-';
-    document.getElementById('v-eur').textContent    = d.EURKRW  ? d.EURKRW.toFixed(2)    : '-';
-    document.getElementById('v-dxy').textContent    = d.DXY     ? d.DXY.toFixed(2)       : '-';
-    document.getElementById('v-kr').textContent     = d.KR10Y   ? d.KR10Y.toFixed(2)+'%' : '-';
-    document.getElementById('v-us').textContent     = d.US10Y   ? d.US10Y.toFixed(2)+'%' : '-';
-    document.getElementById('v-sp').textContent     = d.spread10y != null ? d.spread10y.toFixed(2)+' pp' : '-';
-  } catch(e) { console.error('latest', e); }
+    document.getElementById('v-usd').textContent = d.USDKRW  ? d.USDKRW.toFixed(2)    : '-';
+    document.getElementById('v-eur').textContent = d.EURKRW  ? d.EURKRW.toFixed(2)    : '-';
+    document.getElementById('v-dxy').textContent = d.DXY     ? d.DXY.toFixed(2)       : '-';
+    document.getElementById('v-kr').textContent  = d.KR10Y   ? d.KR10Y.toFixed(2)+'%' : '-';
+    document.getElementById('v-us').textContent  = d.US10Y   ? d.US10Y.toFixed(2)+'%' : '-';
+    document.getElementById('v-sp').textContent  = d.spread10y != null ? d.spread10y.toFixed(2)+' pp' : '-';
+  } catch(e) {}
 }
 
+// ── 뉴스 ─────────────────────────────────────────────
 async function loadNews() {
   try {
     const d = await (await req('/api/market/today')).json();
     if (d.news && d.news.length)
       document.getElementById('news').innerHTML =
-        d.news.map(n=>`<li><a href="${n.url}" target="_blank">${n.title}</a></li>`).join('');
-  } catch(e) { console.error('news', e); }
+        d.news.map(n => `<li><a href="${n.url}" target="_blank">${n.title}</a></li>`).join('');
+  } catch(e) {}
 }
 
+// ── 외화보유액 ────────────────────────────────────────
 async function loadReserves() {
   try {
     const d = await (await req('/api/reserves')).json();
@@ -325,36 +486,202 @@ async function loadReserves() {
       sRES.setData(d.series.map(s => ({ time: s.month, value: s.value })));
       chRES.timeScale().fitContent();
     }
-  } catch(e) { console.error('reserves', e); }
+  } catch(e) {}
 }
 
+// ── AI 분석 (이모티콘 없음) ──────────────────────────
 async function runAI() {
   const btn = document.getElementById('ai-btn');
   const box = document.getElementById('ai-txt');
-  btn.disabled = true; btn.textContent = '⏳ 분석 중...';
+  btn.disabled = true;
+  btn.textContent = '분석 중...';
   box.textContent = '시장 데이터를 심층 분석하고 있습니다...';
   try {
     const d = await (await req('/api/analysis')).json();
     if (d.analysis) {
-      box.innerHTML = d.analysis.replace(/\*\*(.*?)\*\*/g,'<strong>$1</strong>').replace(/\n/g,'<br>');
-      btn.textContent = '✅ 분석 완료';
+      box.innerHTML = d.analysis
+        .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
+        .replace(/\n/g, '<br>');
+      btn.textContent = '분석 완료';
     } else {
       box.textContent = '⚠️ ' + (d.error || '분석 실패');
-      btn.disabled = false; btn.textContent = '🤖 AI 분석 생성';
+      btn.disabled = false;
+      btn.textContent = 'AI 분석 생성';
     }
   } catch(e) {
     box.textContent = '⚠️ 오류 발생';
-    btn.disabled = false; btn.textContent = '🤖 AI 분석 생성';
+    btn.disabled = false;
+    btn.textContent = 'AI 분석 생성';
   }
 }
+
+
+// ════════════════════════════════════════════════════
+//  파이 차트 공통 유틸 (Chart.js)
+// ════════════════════════════════════════════════════
+const PIE_COLORS = [
+  '#3b82f6','#10b981','#f59e0b','#ef4444','#8b5cf6',
+  '#06b6d4','#f97316','#ec4899','#84cc16','#14b8a6'
+];
+
+function buildPie(canvasId, items) {
+  const ctx = document.getElementById(canvasId).getContext('2d');
+  if (window['_ch_' + canvasId]) window['_ch_' + canvasId].destroy();
+  window['_ch_' + canvasId] = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: items.map(i => i.name),
+      datasets: [{
+        data:            items.map(i => i.value),
+        backgroundColor: items.map((_, x) => PIE_COLORS[x % PIE_COLORS.length]),
+        borderColor:     '#1e293b',
+        borderWidth:     2,
+        hoverOffset:     6
+      }]
+    },
+    options: {
+      responsive: false,
+      cutout: '52%',
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => {
+              const tot = ctx.dataset.data.reduce((a,b)=>a+b,0);
+              const pct = ((ctx.parsed / tot)*100).toFixed(1);
+              return ` ${ctx.label}: ${ctx.formattedValue} (${pct}%)`;
+            }
+          }
+        }
+      }
+    }
+  });
+}
+
+function buildLegend(legendId, items) {
+  const total = items.reduce((a,b) => a + b.value, 0);
+  if (!total) {
+    document.getElementById(legendId).innerHTML = '<div class="empty-msg">데이터 없음</div>';
+    return;
+  }
+  document.getElementById(legendId).innerHTML = items.map((item, i) => {
+    const pct = ((item.value / total)*100).toFixed(1);
+    return `<div class="legend-item">
+      <div class="legend-dot" style="background:${PIE_COLORS[i%PIE_COLORS.length]}"></div>
+      <span class="legend-name">${item.name}</span>
+      <span class="legend-val">${item.value.toLocaleString()}</span>
+      <span class="legend-pct">${pct}%</span>
+    </div>`;
+  }).join('');
+}
+
+
+// ════════════════════════════════════════════════════
+//  외환 보유 현황
+// ════════════════════════════════════════════════════
+let fxItems = JSON.parse(localStorage.getItem('fx_items') || '[]');
+function saveFx()     { localStorage.setItem('fx_items', JSON.stringify(fxItems)); }
+
+function renderFxItems() {
+  const el = document.getElementById('fx-items');
+  if (!fxItems.length) { el.innerHTML = ''; return; }
+  el.innerHTML = fxItems.map((item, i) =>
+    `<div class="input-row">
+      <span style="font-size:0.75rem;color:#94a3b8;flex:1">${item.name}: ${item.value.toLocaleString()}</span>
+      <button class="btn-del" onclick="delFxItem(${i})">삭제</button>
+    </div>`
+  ).join('');
+}
+
+function addFxItem() {
+  const cur = document.getElementById('fx-cur').value;
+  const amt = parseFloat(document.getElementById('fx-amt').value);
+  if (!amt || amt <= 0) return;
+  const ex = fxItems.find(i => i.name === cur);
+  if (ex) ex.value += amt;
+  else fxItems.push({ name: cur, value: amt });
+  document.getElementById('fx-amt').value = '';
+  saveFx(); renderFxItems(); updateFxChart();
+}
+
+function delFxItem(idx) {
+  fxItems.splice(idx, 1);
+  saveFx(); renderFxItems(); updateFxChart();
+}
+
+function updateFxChart() {
+  if (!fxItems.length) {
+    document.getElementById('legend-fx').innerHTML = '<div class="empty-msg">보유 외환을 입력하세요</div>';
+    return;
+  }
+  buildPie('pie-fx', fxItems);
+  buildLegend('legend-fx', fxItems);
+}
+
+
+// ════════════════════════════════════════════════════
+//  수안푸드 재고
+// ════════════════════════════════════════════════════
+let invItems = JSON.parse(localStorage.getItem('inv_items') || '[]');
+function saveInv()     { localStorage.setItem('inv_items', JSON.stringify(invItems)); }
+
+function renderInvItems() {
+  const el = document.getElementById('inv-items');
+  if (!invItems.length) { el.innerHTML = ''; return; }
+  el.innerHTML = invItems.map((item, i) =>
+    `<div class="input-row">
+      <span style="font-size:0.75rem;color:#94a3b8;flex:1">${item.name}: ${item.value.toLocaleString()}</span>
+      <button class="btn-del" onclick="delInvItem(${i})">삭제</button>
+    </div>`
+  ).join('');
+}
+
+function addInvItem() {
+  const name = document.getElementById('inv-name').value.trim();
+  const qty  = parseFloat(document.getElementById('inv-qty').value);
+  if (!name || !qty || qty <= 0) return;
+  const ex = invItems.find(i => i.name === name);
+  if (ex) ex.value += qty;
+  else invItems.push({ name, value: qty });
+  document.getElementById('inv-name').value = '';
+  document.getElementById('inv-qty').value  = '';
+  saveInv(); renderInvItems(); updateInvChart();
+}
+
+function delInvItem(idx) {
+  invItems.splice(idx, 1);
+  saveInv(); renderInvItems(); updateInvChart();
+}
+
+function updateInvChart() {
+  if (!invItems.length) {
+    document.getElementById('legend-inv').innerHTML = '<div class="empty-msg">재고를 입력하세요</div>';
+    return;
+  }
+  buildPie('pie-inv', invItems);
+  buildLegend('legend-inv', invItems);
+}
+
+// Enter 키 지원
+document.getElementById('fx-amt').addEventListener('keydown',  e => e.key==='Enter' && addFxItem());
+document.getElementById('inv-qty').addEventListener('keydown',  e => e.key==='Enter' && addInvItem());
+document.getElementById('inv-name').addEventListener('keydown', e => e.key==='Enter' && document.getElementById('inv-qty').focus());
+
+
+// ════════════════════════════════════════════════════
+//  초기 로드
+// ════════════════════════════════════════════════════
+renderFxItems();  if (fxItems.length)  updateFxChart();
+renderInvItems(); if (invItems.length) updateInvChart();
 
 Promise.all([
   loadLatest(), loadNews(), loadReserves(),
   loadCandles('USDKRW', sUSD, chUSD),
   loadCandles('EURKRW', sEUR, chEUR),
   loadCandles('DXY',    sDXY, chDXY)
-]).then(() => console.log('✅ FX Dashboard v5 로드 완료'));
+]).then(() => console.log('✅ FX Dashboard v7 로드 완료'));
 
+// 60초마다 자동 갱신
 setInterval(() => {
   loadLatest();
   loadCandles('USDKRW', sUSD, chUSD);
