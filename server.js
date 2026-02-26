@@ -1,43 +1,58 @@
-// server.js - v5.0.0
+// server.js - v7.0.0  (BUILD_ID auto-refresh)
 const path = require('path');
+const fs   = require('fs');
 const express = require('express');
-const cors = require('cors');
+const cors    = require('cors');
 const cheerio = require('cheerio');
-const iconv = require('iconv-lite');
+const iconv   = require('iconv-lite');
 
 const app = express();
 app.use(cors());
 app.use(express.json());
 
-// ─── 캐시 완전 금지 미들웨어 ──────────────────────────
+// ─── 서버 시작 시 유일한 BUILD_ID 생성 ───────────────
+// 매 배포마다 서버가 재시작되므로 항상 새 값
+const BUILD_ID = Date.now().toString();
+console.log(`🔑 BUILD_ID: ${BUILD_ID}`);
+
+// ─── 전역 캐시 완전 금지 ─────────────────────────────
 app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '-1');
+  res.setHeader('Surrogate-Control', 'no-store'); // Render CDN 비활성화
   next();
 });
 
-// ─── 캐시 완전 우회: / → /fx 리디렉션 ─────────────────
-// 핵심 원리: 브라우저가 /에 구버전 HTML을 캐시하고 있어도
-// /fx는 한 번도 캐시된 적 없는 새 URL → 항상 서버에서 수신
+// ─── / → /fx 리디렉션 (302, no-cache) ────────────────
 app.get('/', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '-1');
-  // 302 리디렉션 (브라우저가 캐시 안 함)
   res.redirect(302, '/fx');
 });
 
-// /fx : 실제 대시보드 서빙 (no-cache)
+// ─── /fx : BUILD_ID 삽입 후 동적 서빙 ────────────────
+// sendFile 대신 readFileSync+치환 → res.send
+// 이 방식은 서버가 항상 최신 HTML을 내려보내므로
+// CDN/브라우저가 캐시해도 BUILD_ID가 달라서 자동 reload됨
 app.get('/fx', (req, res) => {
-  res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
-  res.setHeader('Pragma', 'no-cache');
-  res.setHeader('Expires', '-1');
-  res.sendFile(path.join(__dirname, 'public', 'index.html'));
+  try {
+    let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
+    html = html.replace(/REPLACE_BUILD_ID/g, BUILD_ID);
+    res.setHeader('Content-Type', 'text/html; charset=utf-8');
+    res.send(html);
+  } catch (e) {
+    res.status(500).send('index.html 로드 오류: ' + e.message);
+  }
 });
 
-// 정적 파일 (icons, sw.js 등)
-app.use(express.static('public', { index: false, etag: false, maxAge: 0, lastModified: false }));
+// ─── /api/version : 현재 BUILD_ID 반환 ───────────────
+app.get('/api/version', (_, res) => {
+  res.json({ buildId: BUILD_ID, version: '7.0.0' });
+});
+
+// 정적 파일 (sw.js, icons 등) — index 없이
+app.use(express.static('public', {
+  index: false, etag: false, maxAge: 0, lastModified: false
+}));
 
 // ─── 데이터 저장소 ────────────────────────────────────
 const candles = { USDKRW: [], EURKRW: [], DXY: [] };
@@ -117,8 +132,8 @@ function storeCandle(sym, price) {
   const ts = Math.floor(Date.now() / 1800000) * 1800000;
   const ex = candles[sym].find(c => c.timestamp === ts);
   if (ex) {
-    ex.high = Math.max(ex.high, price);
-    ex.low  = Math.min(ex.low,  price);
+    ex.high  = Math.max(ex.high, price);
+    ex.low   = Math.min(ex.low,  price);
     ex.close = price;
   } else {
     candles[sym].push({ timestamp: ts, open: price, high: price, low: price, close: price });
@@ -126,30 +141,29 @@ function storeCandle(sym, price) {
   }
 }
 
-// ─── 초기 데이터 생성 (랜덤워크 - 연속적인 캔들) ────────
+// ─── 초기 데이터 (랜덤워크 연속 캔들) ──────────────────
 function buildInitialCandles(basePrice, bodyRange, wickRange) {
   const now = Date.now();
   const result = [];
   let price = basePrice;
   for (let i = 24; i >= 1; i--) {
-    const ts   = Math.floor((now - i * 1800000) / 1800000) * 1800000;
+    const ts    = Math.floor((now - i * 1800000) / 1800000) * 1800000;
     const open  = parseFloat(price.toFixed(2));
     const move  = (Math.random() - 0.5) * bodyRange;
     const close = parseFloat((open + move).toFixed(2));
     const high  = parseFloat((Math.max(open, close) + Math.random() * wickRange).toFixed(2));
     const low   = parseFloat((Math.min(open, close) - Math.random() * wickRange).toFixed(2));
     result.push({ timestamp: ts, open, high, low, close });
-    price = close; // 다음 캔들 시가 = 이전 종가 (연속성)
+    price = close;
   }
   return result;
 }
 
 function generateInitialData() {
-  // 실제 크롤링 값 기반, 랜덤워크로 자연스러운 캔들 생성
   candles.USDKRW = buildInitialCandles(state.USDKRW || 1451.0, 0.8,  0.25);
   candles.EURKRW = buildInitialCandles(state.EURKRW || 1715.0, 1.2,  0.40);
   candles.DXY    = buildInitialCandles(state.DXY    ||   97.0, 0.05, 0.02);
-  console.log('✅ 초기 캔들 생성: 24개 (12시간 30분봉)');
+  console.log('✅ 초기 캔들 24개 생성 (24 x 30min = 12h)');
 }
 
 async function crawlLoop() {
@@ -166,7 +180,7 @@ async function crawlLoop() {
 // ─── 서버 시작 ────────────────────────────────────────
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, async () => {
-  console.log(`🚀 FX Dashboard v5.0.0 - 포트 ${PORT}`);
+  console.log(`🚀 FX Dashboard v7.0.0 - 포트 ${PORT} - BUILD_ID: ${BUILD_ID}`);
   await crawlFx();
   await crawlDXY();
   generateInitialData();
@@ -175,22 +189,22 @@ app.listen(PORT, async () => {
 
 // ─── API ──────────────────────────────────────────────
 app.get('/api/latest', (_, res) => res.json({
-  version: '5.0.0', asofKST: kstNow(),
+  version: '7.0.0', buildId: BUILD_ID, asofKST: kstNow(),
   USDKRW: state.USDKRW, EURKRW: state.EURKRW, DXY: state.DXY,
   KR10Y: state.KR10Y, US10Y: state.US10Y, spread10y: state.spread10y
 }));
 
 app.get('/api/candles', (req, res) => {
-  const sym = req.query.symbol || 'USDKRW';
+  const sym  = req.query.symbol || 'USDKRW';
   const data = (candles[sym] || []).map(c => ({
-    time: Math.floor(c.timestamp / 1000),
-    open: c.open, high: c.high, low: c.low, close: c.close
+    time:  Math.floor(c.timestamp / 1000),
+    open:  c.open, high: c.high, low: c.low, close: c.close
   }));
-  res.json({ version: '5.0.0', symbol: sym, interval: '30m', count: data.length, data });
+  res.json({ version: '7.0.0', symbol: sym, interval: '30m', count: data.length, data });
 });
 
 app.get('/api/reserves', (_, res) => res.json({
-  version: '5.0.0', asofKST: kstNow(),
+  version: '7.0.0', asofKST: kstNow(),
   source: '한국은행', unit: 'USD bn', series: reservesData
 }));
 
@@ -206,7 +220,7 @@ app.get('/api/market/today', async (_, res) => {
       if (title && href)
         news.push({ title, url: href.startsWith('http') ? href : 'https://finance.naver.com' + href });
     });
-    res.json({ version: '5.0.0', asofKST: kstNow(), news });
+    res.json({ version: '7.0.0', asofKST: kstNow(), news });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
@@ -230,6 +244,6 @@ app.get('/api/analysis', async (_, res) => {
     const d = await r.json();
     const analysis = d.candidates?.[0]?.content?.parts?.[0]?.text || '분석 실패';
     aCache.set(KEY, { analysis, ts: Date.now() });
-    res.json({ version: '5.0.0', analysis, cached: false });
+    res.json({ version: '7.0.0', analysis, cached: false });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
