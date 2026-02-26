@@ -1,36 +1,55 @@
-// sw.js - Service Worker: 모든 요청을 네트워크 우선으로 처리
-const CACHE_NAME = 'fx-v5';
+// sw.js - v7.0.0  강화된 캐시 우회
+// 모든 navigation(HTML 페이지) 요청을 항상 네트워크에서 받아옴
+// → 브라우저 캐시가 있어도 SW가 가로채 최신 HTML 강제 로드
 
-// 설치 즉시 활성화
-self.addEventListener('install', e => {
+const SW_VERSION = 'sw-v7';
+
+self.addEventListener('install', (event) => {
+  console.log('[SW] install', SW_VERSION);
+  // 대기 없이 즉시 활성화
   self.skipWaiting();
 });
 
-// 활성화 시 이전 캐시 모두 삭제
-self.addEventListener('activate', e => {
-  e.waitUntil(
+self.addEventListener('activate', (event) => {
+  console.log('[SW] activate', SW_VERSION);
+  event.waitUntil(
+    // 모든 이전 캐시 삭제
     caches.keys().then(keys =>
-      Promise.all(keys.map(k => caches.delete(k)))
+      Promise.all(keys.map(k => {
+        console.log('[SW] deleting cache:', k);
+        return caches.delete(k);
+      }))
     ).then(() => self.clients.claim())
   );
 });
 
-// 모든 fetch 요청: 항상 네트워크 우선
-self.addEventListener('fetch', e => {
-  // HTML 요청은 절대 캐시 사용 안 함
-  if (e.request.mode === 'navigate' ||
-      e.request.headers.get('accept').includes('text/html')) {
-    e.respondWith(
-      fetch(e.request, {
+self.addEventListener('fetch', (event) => {
+  const req = event.request;
+
+  // navigation 요청(HTML 페이지) → 항상 네트워크 우선
+  if (req.mode === 'navigate') {
+    event.respondWith(
+      fetch(req, {
         cache: 'no-store',
-        headers: { 'Cache-Control': 'no-cache, no-store' }
-      }).catch(() => caches.match(e.request)) // 오프라인 폴백
+        headers: {
+          'Cache-Control': 'no-cache, no-store, must-revalidate',
+          'Pragma': 'no-cache'
+        }
+      }).catch(() => {
+        // 오프라인 상태에서만 캐시 fallback (없으면 오류)
+        return caches.match(req);
+      })
     );
     return;
   }
-  // 나머지(JS/CSS/이미지)도 네트워크 우선
-  e.respondWith(
-    fetch(e.request, { cache: 'no-store' })
-      .catch(() => caches.match(e.request))
-  );
+
+  // API 요청 → 항상 네트워크 (no-store)
+  if (req.url.includes('/api/')) {
+    event.respondWith(
+      fetch(req, { cache: 'no-store' })
+    );
+    return;
+  }
+
+  // 나머지 정적 파일(js, css 등) → 기본 처리
 });
