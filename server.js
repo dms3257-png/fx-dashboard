@@ -1,4 +1,4 @@
-// server.js - v7.0.0  (BUILD_ID auto-refresh)
+// server.js - v8.0.0  (BUILD_ID auto-refresh + weekly report)
 const path = require('path');
 const fs   = require('fs');
 const express = require('express');
@@ -11,7 +11,6 @@ app.use(cors());
 app.use(express.json());
 
 // ─── 서버 시작 시 유일한 BUILD_ID 생성 ───────────────
-// 매 배포마다 서버가 재시작되므로 항상 새 값
 const BUILD_ID = Date.now().toString();
 console.log(`🔑 BUILD_ID: ${BUILD_ID}`);
 
@@ -20,19 +19,16 @@ app.use((req, res, next) => {
   res.setHeader('Cache-Control', 'no-store, no-cache, must-revalidate, max-age=0');
   res.setHeader('Pragma', 'no-cache');
   res.setHeader('Expires', '-1');
-  res.setHeader('Surrogate-Control', 'no-store'); // Render CDN 비활성화
+  res.setHeader('Surrogate-Control', 'no-store');
   next();
 });
 
-// ─── / → /fx 리디렉션 (302, no-cache) ────────────────
+// ─── / → /fx 리디렉션 ────────────────────────────────
 app.get('/', (req, res) => {
   res.redirect(302, '/fx');
 });
 
 // ─── /fx : BUILD_ID 삽입 후 동적 서빙 ────────────────
-// sendFile 대신 readFileSync+치환 → res.send
-// 이 방식은 서버가 항상 최신 HTML을 내려보내므로
-// CDN/브라우저가 캐시해도 BUILD_ID가 달라서 자동 reload됨
 app.get('/fx', (req, res) => {
   try {
     let html = fs.readFileSync(path.join(__dirname, 'public', 'index.html'), 'utf8');
@@ -44,12 +40,12 @@ app.get('/fx', (req, res) => {
   }
 });
 
-// ─── /api/version : 현재 BUILD_ID 반환 ───────────────
+// ─── /api/version ────────────────────────────────────
 app.get('/api/version', (_, res) => {
-  res.json({ buildId: BUILD_ID, version: '7.0.0' });
+  res.json({ buildId: BUILD_ID, version: '8.0.0' });
 });
 
-// 정적 파일 (sw.js, icons 등) — index 없이
+// 정적 파일
 app.use(express.static('public', {
   index: false, etag: false, maxAge: 0, lastModified: false
 }));
@@ -61,7 +57,35 @@ const state = {
   KR10Y: 2.75, US10Y: 4.50, spread10y: -1.75
 };
 
-// 한국은행 실제 외환보유액 (2025.02 ~ 2026.01)
+// ─── 일봉 데이터 (2026-03-02 ~) ────────────────────────
+// 날짜 문자열을 UTC Unix초로 변환하는 헬퍼
+function dateToUnix(dateStr) {
+  return Math.floor(new Date(dateStr + 'T00:00:00Z').getTime() / 1000);
+}
+
+// 초기 일봉 시드 데이터 (2026-03-02 ~ 2026-03-05)
+const dailyCandleSeeds = {
+  USDKRW: [
+    { time: dateToUnix('2026-03-02'), open: 1453.5, high: 1461.0, low: 1448.2, close: 1457.8 },
+    { time: dateToUnix('2026-03-03'), open: 1457.8, high: 1464.5, low: 1452.5, close: 1461.2 },
+    { time: dateToUnix('2026-03-04'), open: 1461.2, high: 1469.0, low: 1456.0, close: 1455.9 },
+    { time: dateToUnix('2026-03-05'), open: 1455.9, high: 1462.0, low: 1449.5, close: 1451.3 },
+  ],
+  EURKRW: [
+    { time: dateToUnix('2026-03-02'), open: 1718.0, high: 1726.5, low: 1712.0, close: 1722.4 },
+    { time: dateToUnix('2026-03-03'), open: 1722.4, high: 1730.0, low: 1716.8, close: 1719.5 },
+    { time: dateToUnix('2026-03-04'), open: 1719.5, high: 1725.0, low: 1710.5, close: 1714.2 },
+    { time: dateToUnix('2026-03-05'), open: 1714.2, high: 1720.0, low: 1708.0, close: 1715.8 },
+  ],
+  DXY: [
+    { time: dateToUnix('2026-03-02'), open: 97.35, high: 97.82, low: 96.95, close: 97.61 },
+    { time: dateToUnix('2026-03-03'), open: 97.61, high: 98.10, low: 97.20, close: 97.45 },
+    { time: dateToUnix('2026-03-04'), open: 97.45, high: 97.90, low: 96.80, close: 97.12 },
+    { time: dateToUnix('2026-03-05'), open: 97.12, high: 97.55, low: 96.70, close: 97.28 },
+  ]
+};
+
+// ─── 한국은행 실제 외환보유액 (2025.02 ~ 2026.01) ────────
 const reservesData = [
   { month: '2025-02', value: 423.1 },
   { month: '2025-03', value: 419.8 },
@@ -141,6 +165,27 @@ function storeCandle(sym, price) {
   }
 }
 
+// ─── 일봉 오늘 데이터 갱신 ────────────────────────────
+function updateTodayCandle(sym, price) {
+  if (!price || isNaN(price)) return;
+  const todayTs = dateToUnix(new Date(Date.now() + 9*3600000).toISOString().slice(0,10));
+  const ex = dailyCandleSeeds[sym] ? dailyCandleSeeds[sym].find(c => c.time === todayTs) : null;
+  if (ex) {
+    ex.high  = Math.max(ex.high, price);
+    ex.low   = Math.min(ex.low,  price);
+    ex.close = parseFloat(price.toFixed(sym === 'DXY' ? 2 : 1));
+  } else if (dailyCandleSeeds[sym]) {
+    const prev = dailyCandleSeeds[sym][dailyCandleSeeds[sym].length - 1];
+    dailyCandleSeeds[sym].push({
+      time:  todayTs,
+      open:  prev ? prev.close : price,
+      high:  price,
+      low:   price,
+      close: parseFloat(price.toFixed(sym === 'DXY' ? 2 : 1))
+    });
+  }
+}
+
 // ─── 초기 데이터 (랜덤워크 연속 캔들) ──────────────────
 function buildInitialCandles(basePrice, bodyRange, wickRange) {
   const now = Date.now();
@@ -163,7 +208,11 @@ function generateInitialData() {
   candles.USDKRW = buildInitialCandles(state.USDKRW || 1451.0, 0.8,  0.25);
   candles.EURKRW = buildInitialCandles(state.EURKRW || 1715.0, 1.2,  0.40);
   candles.DXY    = buildInitialCandles(state.DXY    ||   97.0, 0.05, 0.02);
-  console.log('✅ 초기 캔들 24개 생성 (24 x 30min = 12h)');
+  // 오늘 일봉 추가
+  if (state.USDKRW) updateTodayCandle('USDKRW', state.USDKRW);
+  if (state.EURKRW) updateTodayCandle('EURKRW', state.EURKRW);
+  if (state.DXY)    updateTodayCandle('DXY',    state.DXY);
+  console.log('✅ 초기 캔들 24개 생성 + 일봉 씨드 로드');
 }
 
 async function crawlLoop() {
@@ -173,6 +222,10 @@ async function crawlLoop() {
   if (state.USDKRW) storeCandle('USDKRW', state.USDKRW);
   if (state.EURKRW) storeCandle('EURKRW', state.EURKRW);
   if (state.DXY)    storeCandle('DXY',    state.DXY);
+  // 일봉 오늘 캔들 갱신
+  if (state.USDKRW) updateTodayCandle('USDKRW', state.USDKRW);
+  if (state.EURKRW) updateTodayCandle('EURKRW', state.EURKRW);
+  if (state.DXY)    updateTodayCandle('DXY',    state.DXY);
   state.spread10y = parseFloat((state.KR10Y - state.US10Y).toFixed(2));
   console.log('📊', JSON.stringify(state));
 }
@@ -180,7 +233,7 @@ async function crawlLoop() {
 // ─── 서버 시작 ────────────────────────────────────────
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, async () => {
-  console.log(`🚀 FX Dashboard v7.0.0 - 포트 ${PORT} - BUILD_ID: ${BUILD_ID}`);
+  console.log(`🚀 환율 데이터 v8.0.0 - 포트 ${PORT} - BUILD_ID: ${BUILD_ID}`);
   await crawlFx();
   await crawlDXY();
   generateInitialData();
@@ -189,7 +242,7 @@ app.listen(PORT, async () => {
 
 // ─── API ──────────────────────────────────────────────
 app.get('/api/latest', (_, res) => res.json({
-  version: '7.0.0', buildId: BUILD_ID, asofKST: kstNow(),
+  version: '8.0.0', buildId: BUILD_ID, asofKST: kstNow(),
   USDKRW: state.USDKRW, EURKRW: state.EURKRW, DXY: state.DXY,
   KR10Y: state.KR10Y, US10Y: state.US10Y, spread10y: state.spread10y
 }));
@@ -200,11 +253,18 @@ app.get('/api/candles', (req, res) => {
     time:  Math.floor(c.timestamp / 1000),
     open:  c.open, high: c.high, low: c.low, close: c.close
   }));
-  res.json({ version: '7.0.0', symbol: sym, interval: '30m', count: data.length, data });
+  res.json({ version: '8.0.0', symbol: sym, interval: '30m', count: data.length, data });
+});
+
+// ─── 일봉 API ─────────────────────────────────────────
+app.get('/api/daily-candles', (req, res) => {
+  const sym = req.query.symbol || 'USDKRW';
+  const data = (dailyCandleSeeds[sym] || []);
+  res.json({ version: '8.0.0', symbol: sym, interval: '1d', count: data.length, data });
 });
 
 app.get('/api/reserves', (_, res) => res.json({
-  version: '7.0.0', asofKST: kstNow(),
+  version: '8.0.0', asofKST: kstNow(),
   source: '한국은행', unit: 'USD bn', series: reservesData
 }));
 
@@ -220,11 +280,13 @@ app.get('/api/market/today', async (_, res) => {
       if (title && href)
         news.push({ title, url: href.startsWith('http') ? href : 'https://finance.naver.com' + href });
     });
-    res.json({ version: '7.0.0', asofKST: kstNow(), news });
+    res.json({ version: '8.0.0', asofKST: kstNow(), news });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
 
 const aCache = new Map();
+
+// ─── 일반 AI 분석 ─────────────────────────────────────
 app.get('/api/analysis', async (_, res) => {
   const KEY = 'fx_analysis';
   const hit = aCache.get(KEY);
@@ -244,6 +306,43 @@ app.get('/api/analysis', async (_, res) => {
     const d = await r.json();
     const analysis = d.candidates?.[0]?.content?.parts?.[0]?.text || '분석 실패';
     aCache.set(KEY, { analysis, ts: Date.now() });
-    res.json({ version: '7.0.0', analysis, cached: false });
+    res.json({ version: '8.0.0', analysis, cached: false });
+  } catch (e) { res.status(500).json({ error: e.message }); }
+});
+
+// ─── 주간 보고서 AI 분석 ──────────────────────────────
+app.get('/api/weekly-analysis', async (_, res) => {
+  const KEY = 'weekly_analysis';
+  const hit = aCache.get(KEY);
+  if (hit && Date.now() - hit.ts < 30 * 60000)
+    return res.json({ analysis: hit.analysis, cached: true });
+
+  try {
+    const KEY_GEM = process.env.GEMINI_API_KEY;
+    if (!KEY_GEM) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
+
+    // 일봉 데이터 요약
+    const usdData = (dailyCandleSeeds.USDKRW || []).map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ');
+    const eurData = (dailyCandleSeeds.EURKRW || []).map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ');
+    const dxyData = (dailyCandleSeeds.DXY || []).map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ');
+
+    const prompt = `금융 시장 전문 애널리스트로서 이번 주(2026년 3월 2일~) 환율 데이터를 분석하여 주간 보고서를 작성해주세요.\n\n[USD/KRW 일봉]\n${usdData}\n\n[EUR/KRW 일봉]\n${eurData}\n\n[DXY 달러인덱스 일봉]\n${dxyData}\n\n[현재 시장]\nUSD/KRW: ${state.USDKRW}, EUR/KRW: ${state.EURKRW}, DXY: ${state.DXY}\nKR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp\n\n## 주간 보고서 작성 항목\n1. 주간 환율 동향 요약\n2. 달러 강약세 분석 (DXY 기반)\n3. 원화 환율 주요 변동 포인트\n4. 다음 주 전망 및 주요 체크포인트\n5. 리스크 요인\n\n(한국어, Markdown 형식, 700~1000자)`;
+
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${KEY_GEM}`,
+      { method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
+    );
+    if (!r.ok) throw new Error('Gemini ' + r.status);
+    const d = await r.json();
+    const analysis = d.candidates?.[0]?.content?.parts?.[0]?.text || '분석 실패';
+    aCache.set(KEY, { analysis, ts: Date.now() });
+    res.json({ version: '8.0.0', analysis, cached: false });
   } catch (e) { res.status(500).json({ error: e.message }); }
 });
