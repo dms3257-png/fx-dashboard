@@ -7,7 +7,7 @@
   <meta http-equiv="Pragma" content="no-cache">
   <meta http-equiv="Expires" content="-1">
   <title>환율 데이터</title>
-  <link rel="manifest" href="/manifest.json">
+  <link rel="manifest" href="/manifest.webmanifest" type="application/manifest+json">
   <meta name="theme-color" content="#1e293b">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -999,6 +999,74 @@ setInterval(() => {
       } catch(err) {
         console.warn('[PWA] install failed:', err);
       }
+    }
+
+    // PWA 설치 가이드 토스트 (alert 대신)
+    function showInstallGuide() {
+      // 기존 토스트 제거
+      const old = document.getElementById('pwa-toast');
+      if (old) old.remove();
+
+      // 진단
+      const swOK = 'serviceWorker' in navigator;
+      const isHttps = location.protocol === 'https:';
+      const isStandalone = window.matchMedia('(display-mode: standalone)').matches;
+
+      if (isStandalone) {
+        showToast('✅ 이미 앱으로 실행 중입니다!', '#10b981', 3000);
+        return;
+      }
+
+      // 토스트 UI
+      const toast = document.createElement('div');
+      toast.id = 'pwa-toast';
+      toast.style.cssText = `
+        position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%);
+        background: #1e293b; border: 1px solid #3b82f6; border-radius: 12px;
+        padding: 16px 20px; z-index: 99999; max-width: 380px; width: 90%;
+        box-shadow: 0 8px 32px rgba(0,0,0,0.5); color: #e2e8f0;
+        font-size: 0.85rem; animation: slideUp 0.3s ease;
+      `;
+
+      let body = '';
+      if (!isHttps) {
+        body = `<div style="color:#ef4444;font-weight:700;margin-bottom:8px">⛔ HTTPS 필요</div>
+                <div>PWA 설치는 HTTPS 환경에서만 가능합니다.</div>`;
+      } else if (!swOK) {
+        body = `<div style="color:#ef4444;font-weight:700;margin-bottom:8px">⛔ 브라우저 미지원</div>
+                <div>이 브라우저는 PWA 설치를 지원하지 않습니다.</div>`;
+      } else {
+        body = `<div style="color:#3b82f6;font-weight:700;margin-bottom:10px">📱 설치 방법</div>
+                <div style="margin-bottom:8px">브라우저가 아직 <b>설치 준비 중</b>입니다.</div>
+                <div style="background:#0f172a;border-radius:8px;padding:10px;margin-bottom:10px;line-height:1.7">
+                  <b>Edge:</b> 주소창 맨 오른쪽 <b>⊕ 또는 🖥 아이콘</b> 클릭<br>
+                  <b>또는:</b> Edge 메뉴(···) → <b>앱 → 이 사이트를 앱으로 설치</b>
+                </div>
+                <div style="color:#94a3b8;font-size:0.78rem">페이지를 Ctrl+Shift+R로 새로고침 후 다시 시도해보세요.</div>`;
+      }
+
+      toast.innerHTML = body + `<div style="margin-top:12px;text-align:right">
+        <button onclick="document.getElementById('pwa-toast').remove()"
+          style="background:#3b82f6;color:#fff;border:none;border-radius:6px;padding:5px 14px;cursor:pointer;font-size:0.82rem">확인</button>
+      </div>`;
+
+      // 슬라이드업 애니메이션
+      const style = document.createElement('style');
+      style.textContent = '@keyframes slideUp{from{opacity:0;transform:translateX(-50%) translateY(20px)}to{opacity:1;transform:translateX(-50%) translateY(0)}}';
+      document.head.appendChild(style);
+
+      document.body.appendChild(toast);
+      setTimeout(() => { if (document.getElementById('pwa-toast')) toast.remove(); }, 8000);
+    }
+
+    function showToast(msg, color, ms) {
+      const t = document.createElement('div');
+      t.style.cssText = `position:fixed;bottom:24px;left:50%;transform:translateX(-50%);
+        background:${color};color:#fff;border-radius:10px;padding:12px 20px;
+        z-index:99999;font-size:0.9rem;font-weight:600;box-shadow:0 4px 16px rgba(0,0,0,0.3)`;
+      t.textContent = msg;
+      document.body.appendChild(t);
+      setTimeout(() => t.remove(), ms || 3000);
     }
 
     // 이미 앱으로 실행 중이면 '설치됨' 상태
