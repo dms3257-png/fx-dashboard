@@ -1,32 +1,53 @@
-// sw.js - v7.0.0  강화된 캐시 우회
-// 모든 navigation(HTML 페이지) 요청을 항상 네트워크에서 받아옴
-// → 브라우저 캐시가 있어도 SW가 가로채 최신 HTML 강제 로드
+// sw.js - v8.0.0  PWA 설치 지원 + 오프라인 fallback
+const SW_VERSION = 'sw-v8';
+const CACHE_NAME = 'fx-shell-v8';
 
-const SW_VERSION = 'sw-v7';
-
+// 설치 시 오프라인 페이지 캐시
 self.addEventListener('install', (event) => {
   console.log('[SW] install', SW_VERSION);
-  // 대기 없이 즉시 활성화
+  event.waitUntil(
+    caches.open(CACHE_NAME).then(cache => {
+      // 핵심 파일 캐시 (오프라인 fallback용)
+      return cache.addAll([
+        '/fx',
+        '/manifest.json',
+        '/icons/icon-192x192.png',
+        '/icons/icon-512x512.png'
+      ]).catch(err => {
+        console.warn('[SW] cache prefetch 일부 실패 (무시):', err);
+      });
+    })
+  );
   self.skipWaiting();
 });
 
 self.addEventListener('activate', (event) => {
   console.log('[SW] activate', SW_VERSION);
   event.waitUntil(
-    // 모든 이전 캐시 삭제
     caches.keys().then(keys =>
-      Promise.all(keys.map(k => {
-        console.log('[SW] deleting cache:', k);
-        return caches.delete(k);
-      }))
+      Promise.all(
+        keys.filter(k => k !== CACHE_NAME).map(k => {
+          console.log('[SW] 구버전 캐시 삭제:', k);
+          return caches.delete(k);
+        })
+      )
     ).then(() => self.clients.claim())
   );
 });
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
+  const url = new URL(req.url);
 
-  // navigation 요청(HTML 페이지) → 항상 네트워크 우선
+  // API 요청 → 항상 네트워크
+  if (url.pathname.startsWith('/api/')) {
+    event.respondWith(
+      fetch(req, { cache: 'no-store' })
+    );
+    return;
+  }
+
+  // HTML 페이지 navigation → 네트워크 우선, 오프라인 시 캐시
   if (req.mode === 'navigate') {
     event.respondWith(
       fetch(req, {
@@ -35,21 +56,33 @@ self.addEventListener('fetch', (event) => {
           'Cache-Control': 'no-cache, no-store, must-revalidate',
           'Pragma': 'no-cache'
         }
+      }).then(response => {
+        // 성공 시 캐시 업데이트
+        const clone = response.clone();
+        caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
+        return response;
       }).catch(() => {
-        // 오프라인 상태에서만 캐시 fallback (없으면 오류)
-        return caches.match(req);
+        // 오프라인 → 캐시에서 서빙
+        return caches.match(req).then(cached => {
+          if (cached) return cached;
+          return caches.match('/fx');
+        });
       })
     );
     return;
   }
 
-  // API 요청 → 항상 네트워크 (no-store)
-  if (req.url.includes('/api/')) {
-    event.respondWith(
-      fetch(req, { cache: 'no-store' })
-    );
-    return;
-  }
-
-  // 나머지 정적 파일(js, css 등) → 기본 처리
+  // 정적 파일 → 캐시 우선
+  event.respondWith(
+    caches.match(req).then(cached => {
+      if (cached) return cached;
+      return fetch(req).then(response => {
+        if (response && response.status === 200) {
+          const clone = response.clone();
+          caches.open(CACHE_NAME).then(cache => cache.put(req, clone));
+        }
+        return response;
+      });
+    })
+  );
 });
