@@ -318,6 +318,71 @@ app.get('/api/analysis', async (_, res) => {
 });
 
 // ─── 주간 보고서 AI 분석 ──────────────────────────────
+// ─── /api/buy-analysis : AI 매입 타이밍 판단 ────────
+app.get('/api/buy-analysis', async (_, res) => {
+  if (!KEY_GEM) return res.json({ error: 'Gemini API key 없음' });
+  try {
+    const usdRecent = (candles.USDKRW || []).slice(-10).map(c =>
+      `${c.t} O:${c.o} H:${c.h} L:${c.l} C:${c.c}`).join('\n') || '데이터 없음';
+    const dxyRecent = (candles.DXY || []).slice(-10).map(c =>
+      `${c.t} C:${c.c}`).join('\n') || '데이터 없음';
+
+    const prompt = `당신은 외환 시장 전문 트레이딩 어드바이저입니다.
+아래 실시간 데이터를 바탕으로 원화(KRW) 기준 외화 매입 타이밍을 판단해주세요.
+
+## 현재 시장 데이터
+- USD/KRW: ${state.USDKRW} 원
+- EUR/KRW: ${state.EURKRW} 원
+- DXY 달러인덱스: ${state.DXY}
+- 한국 10년물 금리: ${state.KR10Y}%
+- 미국 10년물 금리: ${state.US10Y}%
+- 한미 금리차: ${state.spread10y}pp
+
+## 최근 USD/KRW 30분봉 (최근 10개)
+${usdRecent}
+
+## 최근 DXY 30분봉
+${dxyRecent}
+
+## 분석 항목 (한국어, Markdown)
+
+### 1. 현재 환율 수준 평가
+- 현재 USD/KRW 수준 판단 (고평가/적정/저평가)
+- 매입 적기 여부: 🟢매입적기 / 🟡관망 / 🔴매입보류
+
+### 2. 단기 방향성 (1~5일)
+- 달러 강세/약세 전망 근거
+- 주요 지지·저항 레벨
+
+### 3. 국제 정세 반영
+- 현재 글로벌 리스크(무역분쟁, 금리정책, 지정학 등)가 환율에 미치는 영향
+- 주목해야 할 매크로 이벤트
+
+### 4. 매입 전략 제안
+- 추천 매입 시점 및 환율 레벨
+- 분할 매입 전략
+- 목표 환율 및 리스크 관리
+
+### 5. 다음 주 환율 전망
+- 예상 레인지 (최저~최고)
+- 핵심 변수 3가지
+
+(500~800자, 명확한 결론 포함)`;
+
+    const r = await fetch(
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${KEY_GEM}`,
+      { method:'POST', headers:{'Content-Type':'application/json'},
+        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
+    );
+    const j = await r.json();
+    const analysis = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
+    if (!analysis) return res.json({ error: 'AI 응답 없음', raw: j });
+    res.json({ analysis });
+  } catch(e) {
+    res.json({ error: e.message });
+  }
+});
+
 app.get('/api/weekly-analysis', async (_, res) => {
   const KEY = 'weekly_analysis';
   const hit = aCache.get(KEY);
