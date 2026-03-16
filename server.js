@@ -46,9 +46,16 @@ app.get('/api/version', (_, res) => {
 });
 
 // 정적 파일
-app.use(express.static('public', {
-  index: false, etag: false, maxAge: 0, lastModified: false
-}));
+// .webmanifest MIME 타입 등록
+const express_static_opts = {
+  index: false, etag: false, maxAge: 0, lastModified: false,
+  setHeaders: (res, filePath) => {
+    if (filePath.endsWith('.webmanifest')) {
+      res.setHeader('Content-Type', 'application/manifest+json');
+    }
+  }
+};
+app.use(express.static('public', express_static_opts));
 
 // ─── 데이터 저장소 ────────────────────────────────────
 const candles = { USDKRW: [], EURKRW: [], DXY: [] };
