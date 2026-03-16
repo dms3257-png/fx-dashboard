@@ -206,7 +206,7 @@
     /* PWA 설치 버튼 */
     .pwa-install-btn {
       margin-left: auto;
-      display: none;
+      display: flex;
       align-items: center;
       gap: 6px;
       padding: 7px 14px;
@@ -219,10 +219,13 @@
       cursor: pointer;
       transition: all 0.2s;
       white-space: nowrap;
+      box-shadow: 0 2px 8px rgba(59,130,246,0.4);
     }
-    .pwa-install-btn:hover { background: linear-gradient(135deg, #2563eb, #1e40af); transform: translateY(-1px); }
-    .pwa-install-btn.visible { display: flex; }
+    .pwa-install-btn:hover { background: linear-gradient(135deg, #2563eb, #1e40af); transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59,130,246,0.5); }
+    .pwa-install-btn:active { transform: translateY(0); }
     .pwa-install-btn svg { width: 15px; height: 15px; }
+    .pwa-install-btn.installed { background: linear-gradient(135deg, #10b981, #059669); }
+    .pwa-install-btn.installed:hover { background: linear-gradient(135deg, #059669, #047857); }
   </style>
 </head>
 <body>
@@ -919,35 +922,77 @@ setInterval(() => {
   <!-- PWA 설치 스크립트 -->
   <script>
     let deferredPrompt = null;
-    const installBtn = document.getElementById('pwaInstallBtn');
 
-    // beforeinstallprompt 이벤트 캐치 (Chrome, Edge, Whale, Firefox)
+    function getInstallBtn() {
+      return document.getElementById('pwaInstallBtn');
+    }
+
+    // beforeinstallprompt 이벤트 캐치 (Chrome, Edge, Whale)
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
-      if (installBtn) {
-        installBtn.classList.add('visible');
+      const btn = getInstallBtn();
+      if (btn) {
+        btn.classList.remove('installed');
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> 바탕화면에 설치`;
       }
     });
 
     async function installPWA() {
+      const btn = getInstallBtn();
       if (!deferredPrompt) {
-        // 이미 설치됐거나 지원 안 하는 브라우저
-        alert('이미 설치되어 있거나, 브라우저 주소창 우측의 설치 아이콘을 클릭하세요.');
+        // 설치 프롬프트 없음 = 이미 설치됐거나 iOS
+        const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
+        if (isIOS) {
+          alert('📱 iOS에서는 Safari 브라우저 → 공유 버튼(□↑) → "홈 화면에 추가"를 선택하세요.');
+        } else if (window.matchMedia('(display-mode: standalone)').matches) {
+          if (btn) {
+            btn.classList.add('installed');
+            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> 설치됨`;
+          }
+        } else {
+          // 주소창 아이콘 안내
+          alert('🖥️ 주소창 오른쪽 끝의 ⊕ 또는 컴퓨터 아이콘을 클릭해서 설치하세요.\n(Edge: 주소창 → 앱 아이콘 클릭)');
+        }
         return;
       }
-      deferredPrompt.prompt();
-      const { outcome } = await deferredPrompt.userChoice;
-      deferredPrompt = null;
-      if (outcome === 'accepted') {
-        if (installBtn) installBtn.classList.remove('visible');
+      try {
+        deferredPrompt.prompt();
+        const { outcome } = await deferredPrompt.userChoice;
+        deferredPrompt = null;
+        if (outcome === 'accepted') {
+          if (btn) {
+            btn.classList.add('installed');
+            btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> 설치 완료!`;
+            setTimeout(() => {
+              btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> 설치됨`;
+            }, 3000);
+          }
+        }
+      } catch(err) {
+        console.warn('[PWA] install failed:', err);
       }
     }
 
-    // 이미 설치된 경우 버튼 숨기기
+    // 이미 앱으로 실행 중이면 '설치됨' 상태
+    window.addEventListener('DOMContentLoaded', () => {
+      if (window.matchMedia('(display-mode: standalone)').matches) {
+        const btn = getInstallBtn();
+        if (btn) {
+          btn.classList.add('installed');
+          btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> 설치됨`;
+        }
+      }
+    });
+
+    // 설치 완료 이벤트
     window.addEventListener('appinstalled', () => {
-      if (installBtn) installBtn.classList.remove('visible');
       deferredPrompt = null;
+      const btn = getInstallBtn();
+      if (btn) {
+        btn.classList.add('installed');
+        btn.innerHTML = `<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M5 13l4 4L19 7" /></svg> 설치됨`;
+      }
     });
 
     // Service Worker 등록
