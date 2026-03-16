@@ -227,6 +227,22 @@
     .pwa-install-btn.installed { background: linear-gradient(135deg, #10b981, #059669); }
     .pwa-install-btn.installed:hover { background: linear-gradient(135deg, #059669, #047857); }
   </style>
+  <!-- PWA 조기 이벤트 캡처 (head에서 실행) -->
+  <script>
+    window._pwaPrompt = null;
+    window.addEventListener('beforeinstallprompt', function(e) {
+      e.preventDefault();
+      window._pwaPrompt = e;
+      console.log('[PWA] beforeinstallprompt 캡처됨!');
+      // 버튼 업데이트
+      var btn = document.getElementById('pwaInstallBtn');
+      if (btn) {
+        btn.classList.remove('installed');
+        btn.style.background = 'linear-gradient(135deg, #3b82f6, #1d4ed8)';
+        btn.innerHTML = '<svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke="currentColor" stroke-width="2" style="width:15px;height:15px"><path stroke-linecap="round" stroke-linejoin="round" d="M4 16v1a3 3 0 003 3h10a3 3 0 003-3v-1m-4-4l-4 4m0 0l-4-4m4 4V4" /></svg> 바탕화면에 설치';
+      }
+    });
+  </script>
 </head>
 <body>
 <div class="container">
@@ -928,9 +944,15 @@ setInterval(() => {
     }
 
     // beforeinstallprompt 이벤트 캐치 (Chrome, Edge, Whale)
+    // head에서 이미 캡처된 것도 동기화
+    if (window._pwaPrompt) {
+      deferredPrompt = window._pwaPrompt;
+      window._pwaPrompt = null;
+    }
     window.addEventListener('beforeinstallprompt', (e) => {
       e.preventDefault();
       deferredPrompt = e;
+      window._pwaPrompt = e;
       const btn = getInstallBtn();
       if (btn) {
         btn.classList.remove('installed');
@@ -940,6 +962,11 @@ setInterval(() => {
 
     async function installPWA() {
       const btn = getInstallBtn();
+      // head에서 조기 캡처된 프롬프트도 확인
+      if (!deferredPrompt && window._pwaPrompt) {
+        deferredPrompt = window._pwaPrompt;
+        window._pwaPrompt = null;
+      }
       if (!deferredPrompt) {
         // 설치 프롬프트 없음 = 이미 설치됐거나 iOS
         const isIOS = /iphone|ipad|ipod/i.test(navigator.userAgent);
