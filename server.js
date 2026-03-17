@@ -70,25 +70,46 @@ function dateToUnix(dateStr) {
   return Math.floor(new Date(dateStr + 'T00:00:00Z').getTime() / 1000);
 }
 
-// 초기 일봉 시드 데이터 (2026-03-02 ~ 2026-03-05)
+// 초기 일봉 시드 데이터 (2026-03-02 ~ 3/16, 3/17은 실시간 갱신)
 const dailyCandleSeeds = {
   USDKRW: [
     { time: dateToUnix('2026-03-02'), open: 1453.5, high: 1461.0, low: 1448.2, close: 1457.8 },
     { time: dateToUnix('2026-03-03'), open: 1457.8, high: 1464.5, low: 1452.5, close: 1461.2 },
     { time: dateToUnix('2026-03-04'), open: 1461.2, high: 1469.0, low: 1456.0, close: 1455.9 },
     { time: dateToUnix('2026-03-05'), open: 1455.9, high: 1462.0, low: 1449.5, close: 1451.3 },
+    { time: dateToUnix('2026-03-06'), open: 1451.3, high: 1458.0, low: 1447.0, close: 1453.6 },
+    { time: dateToUnix('2026-03-09'), open: 1453.6, high: 1460.5, low: 1449.0, close: 1458.2 },
+    { time: dateToUnix('2026-03-10'), open: 1458.2, high: 1465.8, low: 1454.0, close: 1463.5 },
+    { time: dateToUnix('2026-03-11'), open: 1463.5, high: 1471.0, low: 1459.5, close: 1468.9 },
+    { time: dateToUnix('2026-03-12'), open: 1468.9, high: 1478.5, low: 1465.0, close: 1475.2 },
+    { time: dateToUnix('2026-03-13'), open: 1475.2, high: 1483.0, low: 1471.5, close: 1480.7 },
+    { time: dateToUnix('2026-03-16'), open: 1480.7, high: 1493.5, low: 1478.0, close: 1489.4 },
   ],
   EURKRW: [
     { time: dateToUnix('2026-03-02'), open: 1718.0, high: 1726.5, low: 1712.0, close: 1722.4 },
     { time: dateToUnix('2026-03-03'), open: 1722.4, high: 1730.0, low: 1716.8, close: 1719.5 },
     { time: dateToUnix('2026-03-04'), open: 1719.5, high: 1725.0, low: 1710.5, close: 1714.2 },
     { time: dateToUnix('2026-03-05'), open: 1714.2, high: 1720.0, low: 1708.0, close: 1715.8 },
+    { time: dateToUnix('2026-03-06'), open: 1715.8, high: 1722.5, low: 1710.0, close: 1718.3 },
+    { time: dateToUnix('2026-03-09'), open: 1718.3, high: 1725.0, low: 1713.5, close: 1720.6 },
+    { time: dateToUnix('2026-03-10'), open: 1720.6, high: 1728.0, low: 1716.0, close: 1724.8 },
+    { time: dateToUnix('2026-03-11'), open: 1724.8, high: 1730.5, low: 1718.0, close: 1722.1 },
+    { time: dateToUnix('2026-03-12'), open: 1722.1, high: 1727.0, low: 1715.5, close: 1718.9 },
+    { time: dateToUnix('2026-03-13'), open: 1718.9, high: 1724.0, low: 1712.0, close: 1716.4 },
+    { time: dateToUnix('2026-03-16'), open: 1716.4, high: 1721.5, low: 1710.0, close: 1714.8 },
   ],
   DXY: [
     { time: dateToUnix('2026-03-02'), open: 97.35, high: 97.82, low: 96.95, close: 97.61 },
     { time: dateToUnix('2026-03-03'), open: 97.61, high: 98.10, low: 97.20, close: 97.45 },
     { time: dateToUnix('2026-03-04'), open: 97.45, high: 97.90, low: 96.80, close: 97.12 },
     { time: dateToUnix('2026-03-05'), open: 97.12, high: 97.55, low: 96.70, close: 97.28 },
+    { time: dateToUnix('2026-03-06'), open: 97.28, high: 97.75, low: 96.90, close: 97.52 },
+    { time: dateToUnix('2026-03-09'), open: 97.52, high: 98.20, low: 97.30, close: 97.98 },
+    { time: dateToUnix('2026-03-10'), open: 97.98, high: 98.65, low: 97.80, close: 98.42 },
+    { time: dateToUnix('2026-03-11'), open: 98.42, high: 99.10, low: 98.20, close: 98.87 },
+    { time: dateToUnix('2026-03-12'), open: 98.87, high: 99.55, low: 98.65, close: 99.31 },
+    { time: dateToUnix('2026-03-13'), open: 99.31, high: 99.80, low: 99.05, close: 99.58 },
+    { time: dateToUnix('2026-03-16'), open: 99.58, high: 100.12, low: 99.35, close: 99.82 },
   ]
 };
 
