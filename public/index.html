@@ -423,7 +423,7 @@
     <div class="weekly-header">
       <div>
         <div class="weekly-title">주간 보고서</div>
-        <div class="weekly-sub">2026년 3월 2일 ~ 현재 · 일봉 기준</div>
+        <div class="weekly-sub" id="weekly-date-range">로딩 중...</div>
       </div>
       <span class="tag tag-blue">Weekly Report</span>
     </div>
@@ -495,6 +495,25 @@
 // ════════════════════════════════════════════════════
 //  탭 전환
 // ════════════════════════════════════════════════════
+
+// ── 주간 보고서 날짜 동적 설정 ──────────────────────
+function setWeeklyDateRange() {
+  const now = new Date(Date.now() + 9 * 3600 * 1000); // KST 기준
+  const day = now.getUTCDay(); // 0=일, 1=월 ... 6=토 (UTC 기준)
+  // 이번 주 월요일 (한국 기준)
+  const diffToMon = day === 0 ? 6 : day - 1;
+  const thisMonday = new Date(now);
+  thisMonday.setUTCDate(now.getUTCDate() - diffToMon);
+  // 지난주 월요일 ~ 일요일
+  const lastMonday = new Date(thisMonday);
+  lastMonday.setUTCDate(thisMonday.getUTCDate() - 7);
+  const lastSunday  = new Date(lastMonday);
+  lastSunday.setUTCDate(lastMonday.getUTCDate() + 6);
+  const fmt = d => `${d.getUTCFullYear()}년 ${d.getUTCMonth()+1}월 ${d.getUTCDate()}일`;
+  const el = document.getElementById('weekly-date-range');
+  if (el) el.textContent = `${fmt(lastMonday)} ~ ${fmt(lastSunday)} · 일봉 기준`;
+}
+
 function switchTab(tab) {
   document.getElementById('page-home').style.display    = tab === 'home'   ? '' : 'none';
   document.getElementById('page-weekly').style.display  = tab === 'weekly' ? 'block' : 'none';
@@ -968,6 +987,8 @@ async function runWeeklyAI() {
 // ════════════════════════════════════════════════════
 renderFxItems();
 if (fxItems.length) updateFxChart();
+
+setWeeklyDateRange(); // 지난주 날짜 동적 설정
 
 Promise.all([
   loadLatest(), loadNews(), loadReserves(),
