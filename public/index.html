@@ -67,7 +67,7 @@
     /* ── 메인 레이아웃 ── */
     .pg {
       display: grid;
-      grid-template-columns: 180px 1fr 1fr;
+      grid-template-columns: 260px 1fr 1fr;
       gap: 14px; padding: 14px 20px;
     }
     @media(max-width:900px){.pg{grid-template-columns:1fr;} .weekly-grid{grid-template-columns:1fr !important;} }
@@ -303,13 +303,13 @@
         <!-- ══ AI 매입 판단 카드 ══ -->
         <div class="card" style="margin-top:12px" id="card-ai-buy">
           <div class="card-head">
-            <span class="card-title">🤖 AI 매입 타이밍</span>
+            <span class="card-title">AI 매입 타이밍</span>
             <span class="tag tag-orange">실시간</span>
           </div>
           <button id="buy-ai-btn" class="ai-btn" style="font-size:0.78rem;padding:7px;margin-bottom:8px" onclick="runBuyAI()">
-            ⚡ 매입 판단 생성
+            매입 판단 생성
           </button>
-          <div class="ai-box" style="min-height:60px;max-height:420px">
+          <div class="ai-box" style="min-height:120px;max-height:600px">
             <div class="ai-txt" id="buy-ai-txt" style="font-size:0.78rem">버튼을 눌러 AI 매입 판단을 받으세요.</div>
           </div>
         </div>
