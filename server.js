@@ -320,8 +320,9 @@ app.get('/api/analysis', async (_, res) => {
 // ─── 주간 보고서 AI 분석 ──────────────────────────────
 // ─── /api/buy-analysis : AI 매입 타이밍 판단 ────────
 app.get('/api/buy-analysis', async (_, res) => {
-  if (!KEY_GEM) return res.json({ error: 'Gemini API key 없음' });
   try {
+    const KEY_GEM = process.env.GEMINI_API_KEY;
+    if (!KEY_GEM) return res.status(500).json({ error: 'GEMINI_API_KEY 환경변수 없음' });
     const usdRecent = (candles.USDKRW || []).slice(-10).map(c =>
       `${c.t} O:${c.o} H:${c.h} L:${c.l} C:${c.c}`).join('\n') || '데이터 없음';
     const dxyRecent = (candles.DXY || []).slice(-10).map(c =>
@@ -374,12 +375,13 @@ ${dxyRecent}
       { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
     );
+    if (!r.ok) throw new Error('Gemini HTTP ' + r.status);
     const j = await r.json();
     const analysis = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!analysis) return res.json({ error: 'AI 응답 없음', raw: j });
+    if (!analysis) return res.status(500).json({ error: 'AI 응답 없음' });
     res.json({ analysis });
   } catch(e) {
-    res.json({ error: e.message });
+    res.status(500).json({ error: e.message });
   }
 });
 
