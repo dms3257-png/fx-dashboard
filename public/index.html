@@ -458,14 +458,14 @@
       <div class="card">
         <div class="card-head">
           <span class="card-title">USD/KRW 일별 시세</span>
-          <span class="tag tag-gray">3/2 ~</span>
+          <span class="tag tag-gray" id="tbl-usd-range">집계 중...</span>
         </div>
         <div id="tbl-usd-wrap" style="overflow-x:auto"></div>
       </div>
       <div class="card">
         <div class="card-head">
           <span class="card-title">EUR/KRW 일별 시세</span>
-          <span class="tag tag-gray">3/2 ~</span>
+          <span class="tag tag-gray" id="tbl-eur-range">집계 중...</span>
         </div>
         <div id="tbl-eur-wrap" style="overflow-x:auto"></div>
       </div>
@@ -922,6 +922,18 @@ async function loadDailyData() {
 
 // 일별 시세 테이블 빌드
 function buildRateTable(wrapperId, data, label) {
+  // 날짜 태그 동적 업데이트
+  const rangeId = wrapperId.replace('tbl-', 'tbl-').replace('-wrap', '-range');
+  const rangeEl = document.getElementById(rangeId);
+  if (rangeEl && data.length > 0) {
+    const fmt = ts => {
+      const d = new Date(ts * 1000);
+      return (d.getUTCMonth()+1) + '/' + d.getUTCDate();
+    };
+    const first = fmt(data[0].time);
+    const last  = fmt(data[data.length-1].time);
+    rangeEl.textContent = first + (first !== last ? ' ~ ' + last : '');
+  }
   const DAYS = ['일','월','화','수','목','금','토'];
   let rows = '';
   for (let i = 0; i < data.length; i++) {
