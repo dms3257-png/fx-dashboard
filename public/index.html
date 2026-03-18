@@ -356,11 +356,27 @@
               <span class="tag tag-orange">실시간 · Gemini 2.5</span>
             </div>
             <button id="buy-ai-btn" class="ai-btn" style="margin:0;padding:7px 16px;font-size:0.82rem;white-space:nowrap" onclick="runBuyAI()">
-              ▶ 매입 판단 생성
+              ▶ 분석 생성
             </button>
           </div>
-          <div class="ai-box" style="min-height:160px;max-height:800px;overflow-y:auto">
-            <div class="ai-txt" id="buy-ai-txt" style="font-size:0.82rem;line-height:1.65">버튼을 눌러 AI 매입 판단을 받으세요.<br><span style="color:#64748b;font-size:0.75rem">현재 환율 수준 · 단기 방향 · 지정학 리스크 · 매입 전략 · 다음주 전망 분석</span></div>
+          <!-- 통화 탭 -->
+          <div style="display:flex;gap:6px;margin-bottom:10px">
+            <button id="buy-tab-usd" onclick="switchBuyTab('usd')"
+              style="flex:1;padding:6px 0;border:1px solid #2563eb;border-radius:6px;background:#2563eb;color:#fff;font-size:0.8rem;font-weight:600;cursor:pointer">
+              💵 USD/KRW
+            </button>
+            <button id="buy-tab-eur" onclick="switchBuyTab('eur')"
+              style="flex:1;padding:6px 0;border:1px solid #334155;border-radius:6px;background:transparent;color:#94a3b8;font-size:0.8rem;font-weight:600;cursor:pointer">
+              💶 EUR/KRW
+            </button>
+          </div>
+          <!-- USD 분석 박스 -->
+          <div id="buy-panel-usd" class="ai-box" style="min-height:160px;max-height:800px;overflow-y:auto">
+            <div class="ai-txt" id="buy-ai-txt-usd" style="font-size:0.82rem;line-height:1.65">버튼을 눌러 USD 매입 판단을 받으세요.<br><span style="color:#64748b;font-size:0.75rem">환율 수준 · 단기 방향 · 지정학 리스크 · 매입 전략 · 다음주 전망</span></div>
+          </div>
+          <!-- EUR 분석 박스 -->
+          <div id="buy-panel-eur" class="ai-box" style="min-height:160px;max-height:800px;overflow-y:auto;display:none">
+            <div class="ai-txt" id="buy-ai-txt-eur" style="font-size:0.82rem;line-height:1.65">버튼을 눌러 EUR 매입 판단을 받으세요.<br><span style="color:#64748b;font-size:0.75rem">환율 수준 · 단기 방향 · 유로존 정세 · 매입 전략 · 다음주 전망</span></div>
           </div>
         </div>
       </div>
@@ -725,37 +741,65 @@ async function runAI() {
   }
 }
 
-// ── AI 매입 타이밍 판단 ────────────────────────────
-async function runBuyAI() {
-  const btn = document.getElementById('buy-ai-btn');
-  const box = document.getElementById('buy-ai-txt');
-  btn.disabled = true;
-  btn.textContent = '분석 중...';
-  box.textContent = '환율 데이터·국제정세를 종합 분석 중입니다...';
-  try {
-    const d = await (await req('/api/buy-analysis')).json();
-    if (d.analysis) {
-      box.innerHTML = d.analysis
-        .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fbbf24">$1</strong>')
-        .replace(/^(#{1,3})\s+(.+)$/gm, (_, h, t) => {
-          const sz = h.length === 1 ? '0.88rem' : h.length === 2 ? '0.83rem' : '0.8rem';
-          const col = h.length === 1 ? '#60a5fa' : '#94a3b8';
-          return `<div style="font-size:${sz};font-weight:700;color:${col};margin:8px 0 3px">${t}</div>`;
-        })
-        .replace(/\n/g, '<br>');
-      btn.textContent = '⚡ 매입 판단 재생성';
-      btn.disabled = false;
-    } else {
-      box.textContent = '⚠️ ' + (d.error || '분석 실패');
-      btn.disabled = false;
-      btn.textContent = '⚡ 매입 판단 생성';
-    }
-  } catch(e) {
-    box.textContent = '⚠️ 오류: ' + e.message;
-    btn.disabled = false;
-    btn.textContent = '⚡ 매입 판단 생성';
+// ── AI 매입 타이밍 탭 전환 ─────────────────────────
+let _buyCurrentTab = 'usd';
+function switchBuyTab(tab) {
+  _buyCurrentTab = tab;
+  document.getElementById('buy-panel-usd').style.display = tab === 'usd' ? 'block' : 'none';
+  document.getElementById('buy-panel-eur').style.display = tab === 'eur' ? 'block' : 'none';
+  const uBtn = document.getElementById('buy-tab-usd');
+  const eBtn = document.getElementById('buy-tab-eur');
+  if (tab === 'usd') {
+    uBtn.style.background = '#2563eb'; uBtn.style.borderColor = '#2563eb'; uBtn.style.color = '#fff';
+    eBtn.style.background = 'transparent'; eBtn.style.borderColor = '#334155'; eBtn.style.color = '#94a3b8';
+  } else {
+    eBtn.style.background = '#f97316'; eBtn.style.borderColor = '#f97316'; eBtn.style.color = '#fff';
+    uBtn.style.background = 'transparent'; uBtn.style.borderColor = '#334155'; uBtn.style.color = '#94a3b8';
   }
 }
+
+function renderBuyAnalysis(html, boxId) {
+  const box = document.getElementById(boxId);
+  box.innerHTML = html
+    .replace(/\*\*(.*?)\*\*/g, '<strong style="color:#fbbf24">$1</strong>')
+    .replace(/^(#{1,3})\s+(.+)$/gm, (_, h, t) => {
+      const sz = h.length === 1 ? '0.88rem' : h.length === 2 ? '0.83rem' : '0.8rem';
+      const col = h.length === 1 ? '#60a5fa' : '#94a3b8';
+      return `<div style="font-size:${sz};font-weight:700;color:${col};margin:8px 0 3px">${t}</div>`;
+    })
+    .replace(/\n/g, '<br>');
+}
+
+// ── AI 매입 타이밍 판단 (USD + EUR 동시) ────────────
+async function runBuyAI() {
+  const btn = document.getElementById('buy-ai-btn');
+  const boxUSD = document.getElementById('buy-ai-txt-usd');
+  const boxEUR = document.getElementById('buy-ai-txt-eur');
+  btn.disabled = true;
+  btn.textContent = '분석 중...';
+  boxUSD.textContent = '💵 USD/KRW 분석 중...';
+  boxEUR.textContent = '💶 EUR/KRW 분석 중...';
+  try {
+    const [dUSD, dEUR] = await Promise.all([
+      (await req('/api/buy-analysis?symbol=USD')).json(),
+      (await req('/api/buy-analysis?symbol=EUR')).json()
+    ]);
+    if (dUSD.analysis) renderBuyAnalysis(dUSD.analysis, 'buy-ai-txt-usd');
+    else boxUSD.textContent = '⚠️ ' + (dUSD.error || 'USD 분석 실패');
+    if (dEUR.analysis) renderBuyAnalysis(dEUR.analysis, 'buy-ai-txt-eur');
+    else boxEUR.textContent = '⚠️ ' + (dEUR.error || 'EUR 분석 실패');
+    btn.textContent = '▶ 재분석';
+    btn.disabled = false;
+  } catch(e) {
+    boxUSD.textContent = '⚠️ 오류: ' + e.message;
+    boxEUR.textContent = '⚠️ 오류: ' + e.message;
+    btn.disabled = false;
+    btn.textContent = '▶ 분석 생성';
+  }
+}
+
+// 하위 호환용 (이전 id 참조 방지)
+const _buyAiTxtLegacy = { get: () => document.getElementById('buy-ai-txt-usd') };
 
 // ════════════════════════════════════════════════════
 //  파이 차트 (Chart.js)
