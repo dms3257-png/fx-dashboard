@@ -339,20 +339,38 @@ app.get('/api/analysis', async (_, res) => {
 });
 
 // ─── 주간 보고서 AI 분석 ──────────────────────────────
-// ─── /api/buy-analysis : AI 매입 타이밍 판단 ────────
-app.get('/api/buy-analysis', async (_, res) => {
+// ─── /api/buy-analysis : AI 매입 타이밍 (USD·EUR 공용) ────────
+app.get('/api/buy-analysis', async (req2, res) => {
   try {
     const KEY_GEM = process.env.GEMINI_API_KEY;
     if (!KEY_GEM) return res.status(500).json({ error: 'GEMINI_API_KEY 환경변수 없음' });
-    const usdRecent = (candles.USDKRW || []).slice(-10).map(c =>
-      `${c.t} O:${c.o} H:${c.h} L:${c.l} C:${c.c}`).join('\n') || '데이터 없음';
-    const dxyRecent = (candles.DXY || []).slice(-10).map(c =>
-      `${c.t} C:${c.c}`).join('\n') || '데이터 없음';
+
+    const sym = (req2.query.symbol || 'USD').toUpperCase(); // USD | EUR
+    const isEUR = sym === 'EUR';
+
+    // 30분봉 최근 10개
+    const mainSym   = isEUR ? 'EURKRW' : 'USDKRW';
+    const mainRecent = (candles[mainSym] || []).slice(-10).map(c =>
+      `${new Date(c.timestamp).toISOString().slice(11,16)} O:${c.open.toFixed(2)} H:${c.high.toFixed(2)} L:${c.low.toFixed(2)} C:${c.close.toFixed(2)}`
+    ).join('\n') || '데이터 없음';
+    const dxyRecent  = (candles.DXY || []).slice(-10).map(c =>
+      `${new Date(c.timestamp).toISOString().slice(11,16)} C:${c.close.toFixed(2)}`
+    ).join('\n') || '데이터 없음';
+
+    // 일봉 최근 5일
+    const dailyRecent = (dailyCandleSeeds[mainSym] || []).slice(-5).map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: C${isEUR ? c.close.toFixed(1) : c.close.toFixed(1)}`
+    ).join(', ') || '데이터 없음';
+
+    const pairLabel  = isEUR ? 'EUR/KRW' : 'USD/KRW';
+    const pairPrice  = isEUR ? state.EURKRW : state.USDKRW;
+    const pairUnit   = isEUR ? '유로' : '달러';
 
     const prompt = `당신은 외환 시장 전문 트레이딩 어드바이저입니다.
-아래 실시간 데이터를 바탕으로 원화(KRW) 기준 외화 매입 타이밍을 판단해주세요.
+아래 실시간 데이터를 바탕으로 **${pairLabel} 매입 타이밍**을 정밀 판단해주세요.
 
 ## 현재 시장 데이터
+- ${pairLabel}: ${pairPrice} 원
 - USD/KRW: ${state.USDKRW} 원
 - EUR/KRW: ${state.EURKRW} 원
 - DXY 달러인덱스: ${state.DXY}
@@ -360,36 +378,39 @@ app.get('/api/buy-analysis', async (_, res) => {
 - 미국 10년물 금리: ${state.US10Y}%
 - 한미 금리차: ${state.spread10y}pp
 
-## 최근 USD/KRW 30분봉 (최근 10개)
-${usdRecent}
+## ${pairLabel} 30분봉 (최근 10개)
+${mainRecent}
 
-## 최근 DXY 30분봉
+## DXY 30분봉
 ${dxyRecent}
+
+## ${pairLabel} 일봉 (최근 5일)
+${dailyRecent}
 
 ## 분석 항목 (한국어, Markdown)
 
-### 1. 현재 환율 수준 평가
-- 현재 USD/KRW 수준 판단 (고평가/적정/저평가)
-- 매입 적기 여부: 🟢매입적기 / 🟡관망 / 🔴매입보류
+### 1. ${pairLabel} 현재 수준 평가
+- 현재 ${pairLabel} 수준 (고평가/적정/저평가)
+- **매입 판정: 🟢매입적기 / 🟡관망 / 🔴매입보류**
 
 ### 2. 단기 방향성 (1~5일)
-- 달러 강세/약세 전망 근거
+- ${pairUnit} 강세/약세 전망 근거${isEUR ? '\n- 유로존 경기·ECB 정책 영향' : '\n- DXY 기반 달러 방향성'}
 - 주요 지지·저항 레벨
 
 ### 3. 국제 정세 반영
-- 현재 글로벌 리스크(무역분쟁, 금리정책, 지정학 등)가 환율에 미치는 영향
+- ${isEUR ? '유로존 리스크(ECB 정책, 유럽 지정학, 에너지 가격 등)' : '글로벌 리스크(미 무역정책, 연준 금리, 지정학 등)'}가 환율에 미치는 영향
 - 주목해야 할 매크로 이벤트
 
 ### 4. 매입 전략 제안
 - 추천 매입 시점 및 환율 레벨
 - 분할 매입 전략
-- 목표 환율 및 리스크 관리
+- 목표 환율 및 손절 기준
 
-### 5. 다음 주 환율 전망
+### 5. 다음 주 ${pairLabel} 전망
 - 예상 레인지 (최저~최고)
 - 핵심 변수 3가지
 
-(500~800자, 명확한 결론 포함)`;
+(500~700자, 명확한 결론 포함)`;
 
     const r = await fetch(
       `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${KEY_GEM}`,
@@ -400,7 +421,7 @@ ${dxyRecent}
     const j = await r.json();
     const analysis = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
     if (!analysis) return res.status(500).json({ error: 'AI 응답 없음' });
-    res.json({ analysis });
+    res.json({ analysis, symbol: sym });
   } catch(e) {
     res.status(500).json({ error: e.message });
   }
