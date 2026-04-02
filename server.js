@@ -326,7 +326,7 @@ app.get('/api/analysis', async (_, res) => {
     if (!KEY_GEM) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
     const prompt = `금융 시장 전문 애널리스트로서 현재 외환 시장을 심층 분석해주세요.\n\n데이터: USD/KRW ${state.USDKRW}, EUR/KRW ${state.EURKRW}, DXY ${state.DXY}, KR10Y ${state.KR10Y}%, US10Y ${state.US10Y}%, 금리차 ${state.spread10y}pp\n\n1. 시장 현황 진단\n2. 주요 리스크 요인\n3. 단기 전망\n4. 트레이딩 관점\n\n(한국어, Markdown, 500~800자)`;
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${KEY_GEM}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${KEY_GEM}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
     );
@@ -413,7 +413,7 @@ ${dailyRecent}
 (500~700자, 명확한 결론 포함)`;
 
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${KEY_GEM}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${KEY_GEM}`,
       { method:'POST', headers:{'Content-Type':'application/json'},
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
     );
@@ -451,7 +451,7 @@ app.get('/api/weekly-analysis', async (_, res) => {
     const prompt = `금융 시장 전문 애널리스트로서 이번 주(2026년 3월 2일~) 환율 데이터를 분석하여 주간 보고서를 작성해주세요.\n\n[USD/KRW 일봉]\n${usdData}\n\n[EUR/KRW 일봉]\n${eurData}\n\n[DXY 달러인덱스 일봉]\n${dxyData}\n\n[현재 시장]\nUSD/KRW: ${state.USDKRW}, EUR/KRW: ${state.EURKRW}, DXY: ${state.DXY}\nKR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp\n\n## 주간 보고서 작성 항목\n1. 주간 환율 동향 요약\n2. 달러 강약세 분석 (DXY 기반)\n3. 원화 환율 주요 변동 포인트\n4. 다음 주 전망 및 주요 체크포인트\n5. 리스크 요인\n\n(한국어, Markdown 형식, 700~1000자)`;
 
     const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key=${KEY_GEM}`,
+      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${KEY_GEM}`,
       { method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
     );
