@@ -314,52 +314,195 @@ app.get('/api/market/today', async (_, res) => {
 
 const aCache = new Map();
 
+function calcTrend(series, valueKey = 'close') {
+  const arr = Array.isArray(series) ? series.filter(Boolean) : [];
+  if (arr.length < 2) return { first: null, last: null, pct: 0, dir: '횡보' };
+  const first = Number(arr[0][valueKey]);
+  const last = Number(arr[arr.length - 1][valueKey]);
+  const pct = first ? ((last - first) / first) * 100 : 0;
+  const dir = pct > 0.35 ? '상승' : pct < -0.35 ? '하락' : '횡보';
+  return { first, last, pct, dir };
+}
+
+function getRecentDaily(sym, count = 5) {
+  return (dailyCandleSeeds[sym] || []).slice(-count);
+}
+
+function getRecentIntraday(sym, count = 8) {
+  return (candles[sym] || []).slice(-count);
+}
+
+async function callGeminiWithFallback(prompt, models = ['gemini-3.1-pro-preview', 'gemini-3-flash-preview']) {
+  const KEY_GEM = process.env.GEMINI_API_KEY;
+  if (!KEY_GEM) throw new Error('GEMINI_API_KEY 없음');
+
+  let lastError = 'Gemini 응답 없음';
+  for (const model of models) {
+    try {
+      const r = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${model}:generateContent?key=${KEY_GEM}`,
+        {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] })
+        }
+      );
+
+      if (!r.ok) {
+        let detail = '';
+        try { detail = await r.text(); } catch (_) {}
+        const msg = `${model} HTTP ${r.status}${detail ? ' · ' + detail.slice(0, 160) : ''}`;
+        if (r.status === 429 || r.status >= 500) {
+          lastError = msg;
+          continue;
+        }
+        throw new Error(msg);
+      }
+
+      const d = await r.json();
+      const text = (d.candidates?.[0]?.content?.parts || [])
+        .map(part => part?.text || '')
+        .join('')
+        .trim();
+
+      if (text) return { text, model };
+      lastError = `${model} 빈 응답`;
+    } catch (err) {
+      lastError = err.message || String(err);
+    }
+  }
+
+  throw new Error(lastError);
+}
+
+function buildMarketFallback() {
+  const usd = calcTrend(getRecentDaily('USDKRW'));
+  const eur = calcTrend(getRecentDaily('EURKRW'));
+  const dxy = calcTrend(getRecentDaily('DXY'));
+  const spreadTone = state.spread10y <= -1 ? '미국 금리 우위가 이어져 원화에는 다소 부담입니다.' : '금리차 부담은 제한적입니다.';
+  return `### 1. 시장 현황 진단
+- USD/KRW는 ${state.USDKRW ?? '-'}원, EUR/KRW는 ${state.EURKRW ?? '-'}원, DXY는 ${state.DXY ?? '-'}로 집계됩니다.
+- 최근 5거래일 기준 달러/원은 **${usd.dir}(${usd.pct.toFixed(2)}%)**, 유로/원은 **${eur.dir}(${eur.pct.toFixed(2)}%)**, DXY는 **${dxy.dir}(${dxy.pct.toFixed(2)}%)** 흐름입니다.
+
+### 2. 주요 리스크 요인
+- ${spreadTone}
+- DXY가 ${dxy.dir} 국면이면 달러 강세/약세가 원화 환율에 바로 반영될 가능성이 큽니다.
+
+### 3. 단기 전망
+- 달러/원이 최근 고점권이면 단기 변동성 확대 가능성을, 눌림 구간이면 되돌림 가능성을 함께 봐야 합니다.
+- 유로/원은 달러 흐름과 유로존 재료가 동시에 반영돼 달러/원보다 변동 해석이 복합적입니다.
+
+### 4. 트레이딩 관점
+- 환전은 한 번에 진입하기보다 **분할 매수**가 유효합니다.
+- 현재 응답은 **Gemini 호출 한도 초과 시 제공되는 규칙 기반 백업 분석**입니다.`;
+}
+
+function buildBuyFallback(sym = 'USD') {
+  const isEUR = String(sym).toUpperCase() === 'EUR';
+  const mainSym = isEUR ? 'EURKRW' : 'USDKRW';
+  const pairLabel = isEUR ? 'EUR/KRW' : 'USD/KRW';
+  const pairUnit = isEUR ? '유로' : '달러';
+  const price = isEUR ? Number(state.EURKRW || 0) : Number(state.USDKRW || 0);
+  const daily = getRecentDaily(mainSym);
+  const intraday = getRecentIntraday(mainSym);
+  const dayTrend = calcTrend(daily);
+  const intraTrend = calcTrend(intraday);
+  const avg = daily.length ? daily.reduce((sum, c) => sum + Number(c.close || 0), 0) / daily.length : price || 0;
+  let verdict = '🟡관망';
+  if (price && avg) {
+    if (price <= avg * 0.995) verdict = '🟢매입적기';
+    else if (price >= avg * 1.005) verdict = '🔴매입보류';
+  }
+  return `### 1. ${pairLabel} 현재 수준 평가
+- 현재 ${pairLabel}는 최근 5거래일 평균 ${avg ? avg.toFixed(1) : '-'}원 대비 ${price ? price.toFixed(2) : '-'}원입니다.
+- **매입 판정: ${verdict}**
+
+### 2. 단기 방향성 (1~5일)
+- 최근 일봉은 **${dayTrend.dir}(${dayTrend.pct.toFixed(2)}%)**, 30분봉은 **${intraTrend.dir}(${intraTrend.pct.toFixed(2)}%)** 흐름입니다.
+- 단기 급등 직후라면 추격 매수보다 분할 접근이 유리합니다.
+
+### 3. 국제 정세 반영
+- ${isEUR ? '유로존 경기·ECB·에너지 가격 변수' : 'DXY·연준·미국 정책 변수'}를 함께 체크해야 합니다.
+
+### 4. 매입 전략 제안
+- 한 번에 전량 매수보다 2~3회 **분할 매입**이 적절합니다.
+- 직전 종가 평균 부근으로 눌릴 때 1차 접근을 고려하세요.
+
+### 5. 다음 주 ${pairLabel} 전망
+- 방향성은 **${dayTrend.dir} 우위**로 보되, 변동성은 계속 높을 수 있습니다.
+- 현재 응답은 **Gemini 한도 초과 시 제공되는 백업 분석**입니다.`;
+}
+
+function buildWeeklyFallback() {
+  const usd = calcTrend(getRecentDaily('USDKRW'));
+  const eur = calcTrend(getRecentDaily('EURKRW'));
+  const dxy = calcTrend(getRecentDaily('DXY'));
+  return `### 1. 주간 환율 동향 요약
+- 최근 구간에서 USD/KRW는 **${usd.dir}(${usd.pct.toFixed(2)}%)**, EUR/KRW는 **${eur.dir}(${eur.pct.toFixed(2)}%)** 흐름을 보였습니다.
+
+### 2. 달러 강약세 분석
+- DXY는 최근 **${dxy.dir}(${dxy.pct.toFixed(2)}%)** 흐름으로, 달러/원 방향성에 직접적인 영향을 줍니다.
+
+### 3. 원화 환율 주요 변동 포인트
+- 한미 금리차 ${state.spread10y}pp와 글로벌 위험선호 변화가 핵심 변수입니다.
+
+### 4. 다음 주 전망 및 체크포인트
+- 달러 강세가 이어지면 원화 약세 압력이 남고, 되돌림이 나오면 단기 환율 안정도 가능합니다.
+
+### 5. 리스크 요인
+- 현재 응답은 **Gemini 한도 초과 시 제공되는 규칙 기반 주간 요약**입니다.`;
+}
+
 // ─── 일반 AI 분석 ─────────────────────────────────────
 app.get('/api/analysis', async (_, res) => {
   const KEY = 'fx_analysis';
   const hit = aCache.get(KEY);
   if (hit && Date.now() - hit.ts < 30 * 60000)
-    return res.json({ analysis: hit.analysis, cached: true });
+    return res.json({ analysis: hit.analysis, cached: true, model: hit.model || 'cache' });
 
   try {
-    const KEY_GEM = process.env.GEMINI_API_KEY;
-    if (!KEY_GEM) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
-    const prompt = `금융 시장 전문 애널리스트로서 현재 외환 시장을 심층 분석해주세요.\n\n데이터: USD/KRW ${state.USDKRW}, EUR/KRW ${state.EURKRW}, DXY ${state.DXY}, KR10Y ${state.KR10Y}%, US10Y ${state.US10Y}%, 금리차 ${state.spread10y}pp\n\n1. 시장 현황 진단\n2. 주요 리스크 요인\n3. 단기 전망\n4. 트레이딩 관점\n\n(한국어, Markdown, 500~800자)`;
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${KEY_GEM}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
-    );
-    if (!r.ok) throw new Error('Gemini ' + r.status);
-    const d = await r.json();
-    const analysis = d.candidates?.[0]?.content?.parts?.[0]?.text || '분석 실패';
-    aCache.set(KEY, { analysis, ts: Date.now() });
-    res.json({ version: '8.0.0', analysis, cached: false });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+    const prompt = `금융 시장 전문 애널리스트로서 현재 외환 시장을 심층 분석해주세요.
+
+데이터: USD/KRW ${state.USDKRW}, EUR/KRW ${state.EURKRW}, DXY ${state.DXY}, KR10Y ${state.KR10Y}%, US10Y ${state.US10Y}%, 금리차 ${state.spread10y}pp
+
+1. 시장 현황 진단
+2. 주요 리스크 요인
+3. 단기 전망
+4. 트레이딩 관점
+
+(한국어, Markdown, 500~800자)`;
+    const result = await callGeminiWithFallback(prompt);
+    const analysis = result.text;
+    aCache.set(KEY, { analysis, ts: Date.now(), model: result.model });
+    res.json({ version: '8.0.0', analysis, cached: false, model: result.model });
+  } catch (e) {
+    if (hit?.analysis) {
+      return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: 'Gemini 호출 한도 초과로 최근 캐시를 반환했습니다.' });
+    }
+    const analysis = buildMarketFallback();
+    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 한도 초과로 규칙 기반 분석을 반환했습니다.' });
+  }
 });
 
 // ─── 주간 보고서 AI 분석 ──────────────────────────────
 // ─── /api/buy-analysis : AI 매입 타이밍 (USD·EUR 공용) ────────
 app.get('/api/buy-analysis', async (req2, res) => {
+  const sym = (req2.query.symbol || 'USD').toUpperCase(); // USD | EUR
   try {
-    const KEY_GEM = process.env.GEMINI_API_KEY;
-    if (!KEY_GEM) return res.status(500).json({ error: 'GEMINI_API_KEY 환경변수 없음' });
-
-    const sym = (req2.query.symbol || 'USD').toUpperCase(); // USD | EUR
     const isEUR = sym === 'EUR';
 
     // 30분봉 최근 10개
     const mainSym   = isEUR ? 'EURKRW' : 'USDKRW';
     const mainRecent = (candles[mainSym] || []).slice(-10).map(c =>
       `${new Date(c.timestamp).toISOString().slice(11,16)} O:${c.open.toFixed(2)} H:${c.high.toFixed(2)} L:${c.low.toFixed(2)} C:${c.close.toFixed(2)}`
-    ).join('\n') || '데이터 없음';
+    ).join('\\n') || '데이터 없음';
     const dxyRecent  = (candles.DXY || []).slice(-10).map(c =>
       `${new Date(c.timestamp).toISOString().slice(11,16)} C:${c.close.toFixed(2)}`
-    ).join('\n') || '데이터 없음';
+    ).join('\\n') || '데이터 없음';
 
     // 일봉 최근 5일
     const dailyRecent = (dailyCandleSeeds[mainSym] || []).slice(-5).map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: C${isEUR ? c.close.toFixed(1) : c.close.toFixed(1)}`
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: C${c.close.toFixed(1)}`
     ).join(', ') || '데이터 없음';
 
     const pairLabel  = isEUR ? 'EUR/KRW' : 'USD/KRW';
@@ -394,7 +537,7 @@ ${dailyRecent}
 - **매입 판정: 🟢매입적기 / 🟡관망 / 🔴매입보류**
 
 ### 2. 단기 방향성 (1~5일)
-- ${pairUnit} 강세/약세 전망 근거${isEUR ? '\n- 유로존 경기·ECB 정책 영향' : '\n- DXY 기반 달러 방향성'}
+- ${pairUnit} 강세/약세 전망 근거${isEUR ? '\\n- 유로존 경기·ECB 정책 영향' : '\\n- DXY 기반 달러 방향성'}
 - 주요 지지·저항 레벨
 
 ### 3. 국제 정세 반영
@@ -412,18 +555,10 @@ ${dailyRecent}
 
 (500~700자, 명확한 결론 포함)`;
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${KEY_GEM}`,
-      { method:'POST', headers:{'Content-Type':'application/json'},
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
-    );
-    if (!r.ok) throw new Error('Gemini HTTP ' + r.status);
-    const j = await r.json();
-    const analysis = j?.candidates?.[0]?.content?.parts?.[0]?.text || '';
-    if (!analysis) return res.status(500).json({ error: 'AI 응답 없음' });
-    res.json({ analysis, symbol: sym });
+    const result = await callGeminiWithFallback(prompt);
+    res.json({ analysis: result.text, symbol: sym, model: result.model });
   } catch(e) {
-    res.status(500).json({ error: e.message });
+    res.json({ analysis: buildBuyFallback(sym), symbol: sym, fallback: true, warning: 'Gemini 호출 한도 초과로 규칙 기반 분석을 반환했습니다.' });
   }
 });
 
@@ -431,13 +566,9 @@ app.get('/api/weekly-analysis', async (_, res) => {
   const KEY = 'weekly_analysis';
   const hit = aCache.get(KEY);
   if (hit && Date.now() - hit.ts < 30 * 60000)
-    return res.json({ analysis: hit.analysis, cached: true });
+    return res.json({ analysis: hit.analysis, cached: true, model: hit.model || 'cache' });
 
   try {
-    const KEY_GEM = process.env.GEMINI_API_KEY;
-    if (!KEY_GEM) return res.status(500).json({ error: 'GEMINI_API_KEY 없음' });
-
-    // 일봉 데이터 요약
     const usdData = (dailyCandleSeeds.USDKRW || []).map(c =>
       `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
     ).join(', ');
@@ -448,17 +579,39 @@ app.get('/api/weekly-analysis', async (_, res) => {
       `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
     ).join(', ');
 
-    const prompt = `금융 시장 전문 애널리스트로서 이번 주(2026년 3월 2일~) 환율 데이터를 분석하여 주간 보고서를 작성해주세요.\n\n[USD/KRW 일봉]\n${usdData}\n\n[EUR/KRW 일봉]\n${eurData}\n\n[DXY 달러인덱스 일봉]\n${dxyData}\n\n[현재 시장]\nUSD/KRW: ${state.USDKRW}, EUR/KRW: ${state.EURKRW}, DXY: ${state.DXY}\nKR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp\n\n## 주간 보고서 작성 항목\n1. 주간 환율 동향 요약\n2. 달러 강약세 분석 (DXY 기반)\n3. 원화 환율 주요 변동 포인트\n4. 다음 주 전망 및 주요 체크포인트\n5. 리스크 요인\n\n(한국어, Markdown 형식, 700~1000자)`;
+    const prompt = `금융 시장 전문 애널리스트로서 이번 주 환율 데이터를 분석하여 주간 보고서를 작성해주세요.
 
-    const r = await fetch(
-      `https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-pro-preview:generateContent?key=${KEY_GEM}`,
-      { method: 'POST', headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ contents: [{ parts: [{ text: prompt }] }] }) }
-    );
-    if (!r.ok) throw new Error('Gemini ' + r.status);
-    const d = await r.json();
-    const analysis = d.candidates?.[0]?.content?.parts?.[0]?.text || '분석 실패';
-    aCache.set(KEY, { analysis, ts: Date.now() });
-    res.json({ version: '8.0.0', analysis, cached: false });
-  } catch (e) { res.status(500).json({ error: e.message }); }
+[USD/KRW 일봉]
+${usdData}
+
+[EUR/KRW 일봉]
+${eurData}
+
+[DXY 달러인덱스 일봉]
+${dxyData}
+
+[현재 시장]
+USD/KRW: ${state.USDKRW}, EUR/KRW: ${state.EURKRW}, DXY: ${state.DXY}
+KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
+
+## 주간 보고서 작성 항목
+1. 주간 환율 동향 요약
+2. 달러 강약세 분석 (DXY 기반)
+3. 원화 환율 주요 변동 포인트
+4. 다음 주 전망 및 주요 체크포인트
+5. 리스크 요인
+
+(한국어, Markdown 형식, 700~1000자)`;
+
+    const result = await callGeminiWithFallback(prompt);
+    const analysis = result.text;
+    aCache.set(KEY, { analysis, ts: Date.now(), model: result.model });
+    res.json({ version: '8.0.0', analysis, cached: false, model: result.model });
+  } catch (e) {
+    if (hit?.analysis) {
+      return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: 'Gemini 호출 한도 초과로 최근 캐시를 반환했습니다.' });
+    }
+    const analysis = buildWeeklyFallback();
+    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 한도 초과로 규칙 기반 분석을 반환했습니다.' });
+  }
 });
