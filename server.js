@@ -332,7 +332,25 @@ function getRecentIntraday(sym, count = 8) {
   return (candles[sym] || []).slice(-count);
 }
 
-async function callGeminiWithFallback(prompt, models = ['gemini-3.1-pro-preview', 'gemini-3-flash-preview']) {
+function formatIntradaySeries(sym, count = 8) {
+  return getRecentIntraday(sym, count).map(c => {
+    const hhmm = new Date(c.timestamp).toISOString().slice(11, 16);
+    return `${hhmm} O:${Number(c.open).toFixed(2)} H:${Number(c.high).toFixed(2)} L:${Number(c.low).toFixed(2)} C:${Number(c.close).toFixed(2)}`;
+  }).join(' | ') || '데이터 없음';
+}
+
+function formatDailySeries(sym, count = 5) {
+  return getRecentDaily(sym, count).map(c => {
+    const dt = new Date(c.time * 1000).toISOString().slice(0, 10);
+    return `${dt} O:${Number(c.open).toFixed(2)} H:${Number(c.high).toFixed(2)} L:${Number(c.low).toFixed(2)} C:${Number(c.close).toFixed(2)}`;
+  }).join(' | ') || '데이터 없음';
+}
+
+function latestReserveSummary(count = 3) {
+  return (reservesData || []).slice(-count).map(r => `${r.time}: ${r.value} USD bn`).join(' | ') || '데이터 없음';
+}
+
+async function callGeminiWithFallback(prompt, models = ['gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash']) {
   const KEY_GEM = process.env.GEMINI_API_KEY;
   if (!KEY_GEM) throw new Error('GEMINI_API_KEY 없음');
 
@@ -457,30 +475,70 @@ function buildWeeklyFallback() {
 app.get('/api/analysis', async (_, res) => {
   const KEY = 'fx_analysis';
   const hit = aCache.get(KEY);
-  if (hit && Date.now() - hit.ts < 30 * 60000)
+  if (hit && Date.now() - hit.ts < 15 * 60000)
     return res.json({ analysis: hit.analysis, cached: true, model: hit.model || 'cache' });
 
   try {
-    const prompt = `금융 시장 전문 애널리스트로서 현재 외환 시장을 심층 분석해주세요.
+    const usdDay = calcTrend(getRecentDaily('USDKRW'));
+    const eurDay = calcTrend(getRecentDaily('EURKRW'));
+    const dxyDay = calcTrend(getRecentDaily('DXY'));
+    const usdIntra = calcTrend(getRecentIntraday('USDKRW'));
+    const eurIntra = calcTrend(getRecentIntraday('EURKRW'));
+    const dxyIntra = calcTrend(getRecentIntraday('DXY'));
 
-데이터: USD/KRW ${state.USDKRW}, EUR/KRW ${state.EURKRW}, DXY ${state.DXY}, KR10Y ${state.KR10Y}%, US10Y ${state.US10Y}%, 금리차 ${state.spread10y}pp
+    const prompt = `
+[시장 스냅샷]
+- USD/KRW: ${state.USDKRW}
+- EUR/KRW: ${state.EURKRW}
+- DXY: ${state.DXY}
+- KR10Y: ${state.KR10Y}%
+- US10Y: ${state.US10Y}%
+- 한미 10Y 금리차: ${state.spread10y}pp
+- 외환보유액 최근: ${latestReserveSummary(3)}
 
-1. 시장 현황 진단
-2. 주요 리스크 요인
-3. 단기 전망
-4. 트레이딩 관점
+[최근 30분봉 요약]
+- USD/KRW: ${formatIntradaySeries('USDKRW', 8)}
+- EUR/KRW: ${formatIntradaySeries('EURKRW', 8)}
+- DXY: ${formatIntradaySeries('DXY', 8)}
 
-(한국어, Markdown, 500~800자)`;
-    const result = await callGeminiWithFallback(prompt);
+[최근 일봉 요약]
+- USD/KRW: ${formatDailySeries('USDKRW', 5)}
+- EUR/KRW: ${formatDailySeries('EURKRW', 5)}
+- DXY: ${formatDailySeries('DXY', 5)}
+
+[정량 해석 힌트]
+- USD/KRW 일봉 추세: ${usdDay.dir} (${usdDay.pct.toFixed(2)}%)
+- EUR/KRW 일봉 추세: ${eurDay.dir} (${eurDay.pct.toFixed(2)}%)
+- DXY 일봉 추세: ${dxyDay.dir} (${dxyDay.pct.toFixed(2)}%)
+- USD/KRW 30분봉 추세: ${usdIntra.dir} (${usdIntra.pct.toFixed(2)}%)
+- EUR/KRW 30분봉 추세: ${eurIntra.dir} (${eurIntra.pct.toFixed(2)}%)
+- DXY 30분봉 추세: ${dxyIntra.dir} (${dxyIntra.pct.toFixed(2)}%)
+
+위 정보만 근거로 한국어 Markdown 분석문을 작성하세요.
+요구사항:
+1. 절대 뻔한 문장만 나열하지 말고, 수치와 추세를 직접 인용해 근거를 써라.
+2. 서로 상충하는 신호가 있으면 반드시 '엇갈리는 신호'로 짚어라.
+3. 아래 4개 섹션 제목을 그대로 사용하라.
+4. 은행 리서치센터 수석연구원 톤으로, 짧아도 밀도 있게 써라.
+5. 마지막에 '**한줄 결론:**'으로 실무적 액션을 1문장 제시하라.
+6. 분량은 700~1100자.
+
+### 1. 시장 현황 진단
+### 2. 핵심 동인과 리스크
+### 3. 단기 시나리오
+### 4. 대응 전략
+`;
+
+    const result = await callGeminiWithFallback(prompt, ['gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash']);
     const analysis = result.text;
     aCache.set(KEY, { analysis, ts: Date.now(), model: result.model });
     res.json({ version: '8.0.0', analysis, cached: false, model: result.model });
   } catch (e) {
     if (hit?.analysis) {
-      return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: 'Gemini 호출 한도 초과로 최근 캐시를 반환했습니다.' });
+      return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: '생성 품질 보호를 위해 최근 고품질 캐시를 반환했습니다.' });
     }
     const analysis = buildMarketFallback();
-    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 한도 초과로 규칙 기반 분석을 반환했습니다.' });
+    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: '모델 호출 실패로 백업 분석을 반환했습니다.' });
   }
 });
 
@@ -555,7 +613,7 @@ ${dailyRecent}
 
 (500~700자, 명확한 결론 포함)`;
 
-    const result = await callGeminiWithFallback(prompt);
+    const result = await callGeminiWithFallback(prompt, ['gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash']);
     res.json({ analysis: result.text, symbol: sym, model: result.model });
   } catch(e) {
     res.json({ analysis: buildBuyFallback(sym), symbol: sym, fallback: true, warning: 'Gemini 호출 한도 초과로 규칙 기반 분석을 반환했습니다.' });
@@ -603,7 +661,7 @@ KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
 
 (한국어, Markdown 형식, 700~1000자)`;
 
-    const result = await callGeminiWithFallback(prompt);
+    const result = await callGeminiWithFallback(prompt, ['gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash']);
     const analysis = result.text;
     aCache.set(KEY, { analysis, ts: Date.now(), model: result.model });
     res.json({ version: '8.0.0', analysis, cached: false, model: result.model });
