@@ -113,6 +113,11 @@ const dailyCandleSeeds = {
   ]
 };
 
+const reportHistory = { USDKRW: [], EURKRW: [], DXY: [] };
+let reportHistoryFetchedAt = 0;
+let reportHistoryPromise = null;
+const REPORT_HISTORY_START_YMD = '2025-07-01';
+
 // ─── 한국은행 실제 외환보유액 (2025.02 ~ 2026.01) ────────
 const reservesData = [
   { month: '2025-02-01', value: 423.1 },
@@ -153,6 +158,228 @@ async function fetchText(url, encoding = 'utf-8', timeout = 10000) {
 function kstNow() {
   return new Date(Date.now() + 9 * 3600000)
     .toISOString().replace('T', ' ').substring(0, 19) + ' KST';
+}
+
+function formatYmdLabel(ymd) {
+  const [y, m, d] = ymd.split('-').map(Number);
+  return `${y}.${m}.${d}`;
+}
+
+function stripNumber(text) {
+  const cleaned = String(text || '').replace(/[^0-9.-]/g, '');
+  if (!cleaned || cleaned === '-' || cleaned === '.' || cleaned === '-.') return NaN;
+  return Number(cleaned);
+}
+
+function toYmdFromUnix(time) {
+  return new Date(time * 1000).toISOString().slice(0, 10);
+}
+
+function dedupeByTime(rows) {
+  const m = new Map();
+  for (const row of rows || []) {
+    if (row && row.time) m.set(row.time, row);
+  }
+  return Array.from(m.values()).sort((a, b) => a.time - b.time);
+}
+
+async function scrapeNaverDailyHistory(marketindexCd, minYmd = REPORT_HISTORY_START_YMD, maxPages = 35) {
+  const rows = [];
+  for (let page = 1; page <= maxPages; page++) {
+    const url = `https://finance.naver.com/marketindex/exchangeDailyQuote.naver?marketindexCd=${marketindexCd}&page=${page}`;
+    const html = await fetchText(url, 'euc-kr', 12000);
+    const $ = cheerio.load(html);
+    const pageRows = [];
+    $('table tbody tr').each((_, tr) => {
+      const cols = $(tr).find('td').map((__, td) => $(td).text().replace(/\s+/g, ' ').trim()).get().filter(Boolean);
+      if (cols.length < 7) return;
+      const dateText = cols[0].replace(/\./g, '-');
+      if (!/^\d{4}-\d{2}-\d{2}$/.test(dateText)) return;
+      const baseRate = stripNumber(cols[1]);
+      if (!Number.isFinite(baseRate)) return;
+      pageRows.push({
+        time: dateToUnix(dateText),
+        open: baseRate,
+        high: baseRate,
+        low: baseRate,
+        close: baseRate,
+        baseRate,
+        cashBuy: stripNumber(cols[3]),
+        cashSell: stripNumber(cols[4]),
+        remitSend: stripNumber(cols[5]),
+        remitReceive: stripNumber(cols[6]),
+        source: 'Naver Finance',
+      });
+    });
+    if (!pageRows.length) break;
+    rows.push(...pageRows);
+    const oldest = toYmdFromUnix(pageRows[pageRows.length - 1].time);
+    if (oldest < minYmd) break;
+  }
+  return dedupeByTime(rows).filter(row => toYmdFromUnix(row.time) >= minYmd);
+}
+
+async function fetchYahooDxyHistory(minYmd = REPORT_HISTORY_START_YMD) {
+  const startTs = Math.floor(new Date(minYmd + 'T00:00:00Z').getTime() / 1000);
+  const endTs = Math.floor(Date.now() / 1000) + 86400;
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/DX-Y.NYB?period1=${startTs}&period2=${endTs}&interval=1d&includePrePost=false&events=div%2Csplits`;
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error(`DXY history fetch failed: ${res.status}`);
+  const json = await res.json();
+  const result = json?.chart?.result?.[0];
+  const quote = result?.indicators?.quote?.[0] || {};
+  const timestamps = result?.timestamp || [];
+  const rows = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const closeRaw = quote.close?.[i];
+    const close = typeof closeRaw === 'number' ? closeRaw : Number(closeRaw);
+    if (!Number.isFinite(close) || close <= 0) continue;
+    const openRaw = quote.open?.[i];
+    const highRaw = quote.high?.[i];
+    const lowRaw = quote.low?.[i];
+    const open = typeof openRaw === 'number' && openRaw > 0 ? openRaw : close;
+    const high = typeof highRaw === 'number' && highRaw > 0 ? highRaw : close;
+    const low = typeof lowRaw === 'number' && lowRaw > 0 ? lowRaw : close;
+    rows.push({
+      time: Number(timestamps[i]),
+      open: Number(open.toFixed(2)),
+      high: Number(high.toFixed(2)),
+      low: Number(low.toFixed(2)),
+      close: Number(close.toFixed(2)),
+      source: 'Yahoo Finance'
+    });
+  }
+  return dedupeByTime(rows).filter(row => toYmdFromUnix(row.time) >= minYmd);
+}
+
+function mergeRealtimeIntoReport(sym, price) {
+  if (!price || !Number.isFinite(Number(price))) return;
+  const todayYmd = new Date(Date.now() + 9 * 3600000).toISOString().slice(0, 10);
+  const todayTs = dateToUnix(todayYmd);
+  const digits = sym === 'DXY' ? 2 : 2;
+  const value = Number(Number(price).toFixed(digits));
+  const rows = reportHistory[sym] || [];
+  const last = rows[rows.length - 1];
+  if (last && last.time === todayTs) {
+    last.close = value;
+    last.baseRate = value;
+    last.high = Number.isFinite(last.high) ? Math.max(last.high, value) : value;
+    last.low = Number.isFinite(last.low) ? Math.min(last.low, value) : value;
+    if (!Number.isFinite(last.open)) last.open = value;
+  } else {
+    rows.push({ time: todayTs, open: value, high: value, low: value, close: value, baseRate: value, source: sym === 'DXY' ? 'Yahoo Finance' : 'Naver Finance' });
+  }
+  reportHistory[sym] = dedupeByTime(rows);
+}
+
+async function refreshReportHistory(force = false) {
+  const isFresh = reportHistoryFetchedAt && (Date.now() - reportHistoryFetchedAt < 6 * 3600000);
+  if (!force && isFresh && reportHistory.USDKRW.length && reportHistory.EURKRW.length && reportHistory.DXY.length) return reportHistory;
+  if (reportHistoryPromise) return reportHistoryPromise;
+
+  reportHistoryPromise = (async () => {
+    try {
+      const [usdRows, eurRows, dxyRows] = await Promise.all([
+        scrapeNaverDailyHistory('FX_USDKRW', REPORT_HISTORY_START_YMD, 35),
+        scrapeNaverDailyHistory('FX_EURKRW', REPORT_HISTORY_START_YMD, 35),
+        fetchYahooDxyHistory(REPORT_HISTORY_START_YMD)
+      ]);
+      if (usdRows.length) reportHistory.USDKRW = usdRows;
+      if (eurRows.length) reportHistory.EURKRW = eurRows;
+      if (dxyRows.length) reportHistory.DXY = dxyRows;
+      mergeRealtimeIntoReport('USDKRW', state.USDKRW);
+      mergeRealtimeIntoReport('EURKRW', state.EURKRW);
+      mergeRealtimeIntoReport('DXY', state.DXY);
+      reportHistoryFetchedAt = Date.now();
+      console.log(`✅ 리포트 히스토리 갱신 USD:${reportHistory.USDKRW.length} EUR:${reportHistory.EURKRW.length} DXY:${reportHistory.DXY.length}`);
+      return reportHistory;
+    } catch (err) {
+      console.error('❌ refreshReportHistory:', err.message);
+      if (!reportHistory.USDKRW.length) reportHistory.USDKRW = (dailyCandleSeeds.USDKRW || []).map(c => ({ ...c, baseRate: c.close, source: 'seed' }));
+      if (!reportHistory.EURKRW.length) reportHistory.EURKRW = (dailyCandleSeeds.EURKRW || []).map(c => ({ ...c, baseRate: c.close, source: 'seed' }));
+      if (!reportHistory.DXY.length) reportHistory.DXY = (dailyCandleSeeds.DXY || []).map(c => ({ ...c, source: 'seed' }));
+      return reportHistory;
+    } finally {
+      reportHistoryPromise = null;
+    }
+  })();
+
+  return reportHistoryPromise;
+}
+
+function filterRowsByYmdRange(rows, startYmd, endYmd) {
+  return (rows || []).filter(row => {
+    const ymd = toYmdFromUnix(row.time);
+    return ymd >= startYmd && ymd <= endYmd;
+  });
+}
+
+function getMarchFirstMeta() {
+  const now = kstShiftedNow();
+  return `${now.getUTCFullYear()}-03-01`;
+}
+
+function getWeeklyArchiveMeta() {
+  const weekly = getWeeklyRangeMeta();
+  const end = new Date(weekly.startYmd + 'T00:00:00Z');
+  end.setUTCDate(end.getUTCDate() - 1);
+  const startYmd = getMarchFirstMeta();
+  const endYmd = ymdFromDate(end);
+  return {
+    rangeType: 'weekly-more',
+    startYmd,
+    endYmd,
+    rangeLabel: fmtRangeLabel(startYmd, endYmd),
+    tableLabel: `${formatYmdLabel(startYmd)} ~ ${formatYmdLabel(endYmd)} · 3/1부터 전전 주까지`
+  };
+}
+
+function buildMonthlySeries(rows, startYmd = REPORT_HISTORY_START_YMD) {
+  const filtered = (rows || []).filter(row => toYmdFromUnix(row.time) >= startYmd).sort((a, b) => a.time - b.time);
+  const byMonth = new Map();
+  for (const row of filtered) {
+    const key = toYmdFromUnix(row.time).slice(0, 7);
+    if (!byMonth.has(key)) byMonth.set(key, []);
+    byMonth.get(key).push(row);
+  }
+  return Array.from(byMonth.entries()).map(([monthKey, items]) => {
+    const closes = items.map(item => Number(item.close)).filter(Number.isFinite);
+    const first = items[0];
+    const last = items[items.length - 1];
+    const [year, month] = monthKey.split('-').map(Number);
+    return {
+      time: dateToUnix(`${monthKey}-01`),
+      monthKey,
+      periodLabel: `${year}.${String(month).padStart(2, '0')}`,
+      open: Number(Number(first.close).toFixed(2)),
+      high: Number(Math.max(...closes).toFixed(2)),
+      low: Number(Math.min(...closes).toFixed(2)),
+      close: Number(Number(last.close).toFixed(2)),
+      source: items[0]?.source || 'aggregated'
+    };
+  });
+}
+
+async function getReportSeries(sym, rangeType = 'weekly') {
+  await refreshReportHistory();
+  const all = dedupeByTime(reportHistory[sym] || []);
+  if (rangeType === 'weekly') {
+    const meta = getWeeklyRangeMeta();
+    const data = filterRowsByYmdRange(all, meta.startYmd, meta.endYmd);
+    return { ...meta, interval: '1d', coverageText: `${data.length}영업일`, source: sym === 'DXY' ? 'Yahoo Finance' : 'Naver Finance', data };
+  }
+  if (rangeType === 'weekly-more') {
+    const meta = getWeeklyArchiveMeta();
+    const data = filterRowsByYmdRange(all, meta.startYmd, meta.endYmd);
+    return { ...meta, interval: '1d', coverageText: `${data.length}영업일`, source: sym === 'DXY' ? 'Yahoo Finance' : 'Naver Finance', data };
+  }
+  if (rangeType === 'monthly') {
+    const data = buildMonthlySeries(all, REPORT_HISTORY_START_YMD);
+    const last = data[data.length - 1];
+    const rangeLabel = last ? `2025.7 ~ ${last.periodLabel}` : '2025.7 ~ 현재';
+    return { rangeType: 'monthly', interval: '1mo', rangeLabel, coverageText: `${data.length}개월`, source: sym === 'DXY' ? 'Yahoo Finance' : 'Naver Finance', data };
+  }
+  return { rangeType: 'all', interval: '1d', rangeLabel: '전체', coverageText: `${all.length}건`, source: sym === 'DXY' ? 'Yahoo Finance' : 'Naver Finance', data: all };
 }
 
 // ─── 크롤러 ───────────────────────────────────────────
@@ -265,6 +492,7 @@ app.listen(PORT, async () => {
   await crawlFx();
   await crawlDXY();
   generateInitialData();
+  await refreshReportHistory(true);
   setInterval(crawlLoop, 60000);
 });
 
@@ -285,20 +513,25 @@ app.get('/api/candles', (req, res) => {
 });
 
 // ─── 일봉 API ─────────────────────────────────────────
-app.get('/api/daily-candles', (req, res) => {
-  const sym = req.query.symbol || 'USDKRW';
-  const rangeType = req.query.range || 'all';
-  const result = filterDailyByRange(sym, rangeType);
-  res.json({
-    version: '8.0.0',
-    symbol: sym,
-    interval: '1d',
-    rangeType: result.rangeType,
-    rangeLabel: result.rangeLabel,
-    coverageText: result.coverageText,
-    count: result.data.length,
-    data: result.data
-  });
+app.get('/api/daily-candles', async (req, res) => {
+  try {
+    const sym = req.query.symbol || 'USDKRW';
+    const rangeType = req.query.range || 'all';
+    const result = await getReportSeries(sym, rangeType);
+    res.json({
+      version: '8.0.0',
+      symbol: sym,
+      interval: result.interval || '1d',
+      rangeType: result.rangeType,
+      rangeLabel: result.rangeLabel,
+      coverageText: result.coverageText,
+      source: result.source,
+      count: result.data.length,
+      data: result.data
+    });
+  } catch (e) {
+    res.status(500).json({ version: '8.0.0', error: e.message });
+  }
 });
 
 app.get('/api/reserves', (_, res) => res.json({
@@ -696,35 +929,34 @@ app.get('/api/weekly-analysis', async (_, res) => {
     return res.json({ analysis: hit.analysis, cached: true, model: hit.model || 'cache' });
 
   try {
-    const weeklyMeta = getWeeklyRangeMeta();
-    const usdPeriod = filterDailyByRange('USDKRW', 'weekly');
-    const eurPeriod = filterDailyByRange('EURKRW', 'weekly');
-    const dxyPeriod = filterDailyByRange('DXY', 'weekly');
+    const usdPeriod = await getReportSeries('USDKRW', 'weekly');
+    const eurPeriod = await getReportSeries('EURKRW', 'weekly');
+    const dxyPeriod = await getReportSeries('DXY', 'weekly');
+    const weeklyMeta = { rangeLabel: usdPeriod.rangeLabel };
 
     const usdData = usdPeriod.data.map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: 기준율 ${Number(c.close).toFixed(2)}원`
     ).join(', ') || '해당 기간 데이터 없음';
     const eurData = eurPeriod.data.map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: 기준율 ${Number(c.close).toFixed(2)}원`
     ).join(', ') || '해당 기간 데이터 없음';
     const dxyData = dxyPeriod.data.map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: C${Number(c.close).toFixed(2)}`
     ).join(', ') || '해당 기간 데이터 없음';
 
     const prompt = `금융 시장 전문 애널리스트로서 직전 주간 환율 보고서를 작성해주세요.
-반드시 ${weeklyMeta.rangeLabel} 구간의 일봉 데이터만 사용하고, 구간 밖 데이터는 해석에 포함하지 마세요.
-데이터가 비어 있거나 부족하면 그 한계를 먼저 명시하세요.
+반드시 ${weeklyMeta.rangeLabel} 구간의 일별 시세만 사용하고, 구간 밖 데이터는 해석에 포함하지 마세요.
 
 [분석 대상 기간]
 ${weeklyMeta.rangeLabel}
 
-[USD/KRW 일봉]
+[USD/KRW 일별 시세]
 ${usdData}
 
-[EUR/KRW 일봉]
+[EUR/KRW 일별 시세]
 ${eurData}
 
-[DXY 달러인덱스 일봉]
+[DXY 일별 종가]
 ${dxyData}
 
 [현재 시장]
@@ -732,7 +964,7 @@ USD/KRW: ${state.USDKRW}, EUR/KRW: ${state.EURKRW}, DXY: ${state.DXY}
 KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
 
 ## 주간 보고서 작성 항목
-1. 주간 환율 동향 요약
+1. 직전 주 환율 동향 요약
 2. 달러 강약세 분석 (DXY 기반)
 3. 원화 환율 주요 변동 포인트
 4. 다음 주 전망 및 주요 체크포인트
@@ -749,7 +981,7 @@ KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
       return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: 'Gemini 호출 한도 초과로 최근 캐시를 반환했습니다.' });
     }
     const analysis = buildWeeklyFallback();
-    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 한도 초과로 규칙 기반 분석을 반환했습니다.' });
+    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 실패로 주간 백업 분석을 반환했습니다.' });
   }
 });
 
@@ -760,35 +992,28 @@ app.get('/api/monthly-analysis', async (_, res) => {
     return res.json({ analysis: hit.analysis, cached: true, model: hit.model || 'cache' });
 
   try {
-    const monthlyMeta = getMonthlyRangeMeta();
-    const usdPeriod = filterDailyByRange('USDKRW', 'monthly');
-    const eurPeriod = filterDailyByRange('EURKRW', 'monthly');
-    const dxyPeriod = filterDailyByRange('DXY', 'monthly');
+    const usdPeriod = await getReportSeries('USDKRW', 'monthly');
+    const eurPeriod = await getReportSeries('EURKRW', 'monthly');
+    const dxyPeriod = await getReportSeries('DXY', 'monthly');
+    const monthlyMeta = { rangeLabel: usdPeriod.rangeLabel };
 
-    const usdData = usdPeriod.data.map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
-    ).join(', ') || '해당 기간 데이터 없음';
-    const eurData = eurPeriod.data.map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
-    ).join(', ') || '해당 기간 데이터 없음';
-    const dxyData = dxyPeriod.data.map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
-    ).join(', ') || '해당 기간 데이터 없음';
+    const usdData = usdPeriod.data.map(c => `${c.periodLabel}: O${c.open} H${c.high} L${c.low} C${c.close}`).join(', ') || '데이터 없음';
+    const eurData = eurPeriod.data.map(c => `${c.periodLabel}: O${c.open} H${c.high} L${c.low} C${c.close}`).join(', ') || '데이터 없음';
+    const dxyData = dxyPeriod.data.map(c => `${c.periodLabel}: O${c.open} H${c.high} L${c.low} C${c.close}`).join(', ') || '데이터 없음';
 
-    const prompt = `금융 시장 전문 애널리스트로서 당월 누적 환율 보고서를 작성해주세요.
-반드시 ${monthlyMeta.rangeLabel} 구간의 일봉 데이터만 사용하고, 구간 밖 데이터는 해석에 포함하지 마세요.
-데이터가 비어 있거나 부족하면 그 한계를 먼저 명시하세요.
+    const prompt = `금융 시장 전문 애널리스트로서 월간 환율 보고서를 작성해주세요.
+반드시 ${monthlyMeta.rangeLabel} 구간의 월별 시세만 사용하고, 구간 밖 데이터는 해석에 포함하지 마세요.
 
 [분석 대상 기간]
 ${monthlyMeta.rangeLabel}
 
-[USD/KRW 일봉]
+[USD/KRW 월별 시세]
 ${usdData}
 
-[EUR/KRW 일봉]
+[EUR/KRW 월별 시세]
 ${eurData}
 
-[DXY 달러인덱스 일봉]
+[DXY 월별 시세]
 ${dxyData}
 
 [현재 시장]
@@ -796,10 +1021,10 @@ USD/KRW: ${state.USDKRW}, EUR/KRW: ${state.EURKRW}, DXY: ${state.DXY}
 KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
 
 ## 월간 보고서 작성 항목
-1. 월간 환율 동향 요약
+1. 2025년 7월 이후 월별 흐름 요약
 2. 달러 강약세 분석 (DXY 기반)
 3. 원화 환율 주요 변동 포인트
-4. 남은 기간 전망 및 주요 체크포인트
+4. 향후 체크포인트
 5. 리스크 요인
 
 (한국어, Markdown 형식, 800~1200자)`;
@@ -813,6 +1038,6 @@ KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
       return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: 'Gemini 호출 한도 초과로 최근 캐시를 반환했습니다.' });
     }
     const analysis = buildMarketFallback();
-    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 한도 초과로 월간 백업 분석을 반환했습니다.' });
+    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 실패로 월간 백업 분석을 반환했습니다.' });
   }
 });
