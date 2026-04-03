@@ -287,8 +287,18 @@ app.get('/api/candles', (req, res) => {
 // ─── 일봉 API ─────────────────────────────────────────
 app.get('/api/daily-candles', (req, res) => {
   const sym = req.query.symbol || 'USDKRW';
-  const data = (dailyCandleSeeds[sym] || []);
-  res.json({ version: '8.0.0', symbol: sym, interval: '1d', count: data.length, data });
+  const rangeType = req.query.range || 'all';
+  const result = filterDailyByRange(sym, rangeType);
+  res.json({
+    version: '8.0.0',
+    symbol: sym,
+    interval: '1d',
+    rangeType: result.rangeType,
+    rangeLabel: result.rangeLabel,
+    coverageText: result.coverageText,
+    count: result.data.length,
+    data: result.data
+  });
 });
 
 app.get('/api/reserves', (_, res) => res.json({
@@ -326,6 +336,65 @@ function calcTrend(series, valueKey = 'close') {
 
 function getRecentDaily(sym, count = 5) {
   return (dailyCandleSeeds[sym] || []).slice(-count);
+}
+
+function kstShiftedNow() {
+  return new Date(Date.now() + 9 * 3600000);
+}
+
+function ymdFromDate(d) {
+  return d.toISOString().slice(0, 10);
+}
+
+function fmtRangeLabel(startYmd, endYmd) {
+  const [sy, sm, sd] = startYmd.split('-').map(Number);
+  const [ey, em, ed] = endYmd.split('-').map(Number);
+  return `${sy}.${sm}.${sd} ~ ${ey}.${em}.${ed}`;
+}
+
+function getWeeklyRangeMeta() {
+  const now = kstShiftedNow();
+  const day = now.getUTCDay();
+  const diffToMon = day === 0 ? 6 : day - 1;
+  const thisMonday = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  thisMonday.setUTCDate(thisMonday.getUTCDate() - diffToMon);
+  const start = new Date(thisMonday);
+  start.setUTCDate(start.getUTCDate() - 7);
+  const end = new Date(start);
+  end.setUTCDate(end.getUTCDate() + 6);
+  const startYmd = ymdFromDate(start);
+  const endYmd = ymdFromDate(end);
+  return { startYmd, endYmd, rangeLabel: fmtRangeLabel(startYmd, endYmd), rangeType: 'weekly' };
+}
+
+function getMonthlyRangeMeta() {
+  const now = kstShiftedNow();
+  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
+  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
+  const startYmd = ymdFromDate(start);
+  const endYmd = ymdFromDate(end);
+  return { startYmd, endYmd, rangeLabel: fmtRangeLabel(startYmd, endYmd), rangeType: 'monthly' };
+}
+
+function filterDailyByRange(sym, rangeType = 'all') {
+  const all = (dailyCandleSeeds[sym] || []).slice();
+  if (rangeType === 'weekly') {
+    const meta = getWeeklyRangeMeta();
+    const data = all.filter(c => {
+      const ymd = new Date(c.time * 1000).toISOString().slice(0, 10);
+      return ymd >= meta.startYmd && ymd <= meta.endYmd;
+    });
+    return { ...meta, data, coverageText: `${data.length}거래일` };
+  }
+  if (rangeType === 'monthly') {
+    const meta = getMonthlyRangeMeta();
+    const data = all.filter(c => {
+      const ymd = new Date(c.time * 1000).toISOString().slice(0, 10);
+      return ymd >= meta.startYmd && ymd <= meta.endYmd;
+    });
+    return { ...meta, data, coverageText: `${data.length}거래일` };
+  }
+  return { rangeType: 'all', rangeLabel: '전체', data: all, coverageText: `${all.length}거래일` };
 }
 
 function getRecentIntraday(sym, count = 8) {
@@ -627,17 +696,27 @@ app.get('/api/weekly-analysis', async (_, res) => {
     return res.json({ analysis: hit.analysis, cached: true, model: hit.model || 'cache' });
 
   try {
-    const usdData = (dailyCandleSeeds.USDKRW || []).map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
-    ).join(', ');
-    const eurData = (dailyCandleSeeds.EURKRW || []).map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
-    ).join(', ');
-    const dxyData = (dailyCandleSeeds.DXY || []).map(c =>
-      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
-    ).join(', ');
+    const weeklyMeta = getWeeklyRangeMeta();
+    const usdPeriod = filterDailyByRange('USDKRW', 'weekly');
+    const eurPeriod = filterDailyByRange('EURKRW', 'weekly');
+    const dxyPeriod = filterDailyByRange('DXY', 'weekly');
 
-    const prompt = `금융 시장 전문 애널리스트로서 이번 주 환율 데이터를 분석하여 주간 보고서를 작성해주세요.
+    const usdData = usdPeriod.data.map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ') || '해당 기간 데이터 없음';
+    const eurData = eurPeriod.data.map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ') || '해당 기간 데이터 없음';
+    const dxyData = dxyPeriod.data.map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ') || '해당 기간 데이터 없음';
+
+    const prompt = `금융 시장 전문 애널리스트로서 직전 주간 환율 보고서를 작성해주세요.
+반드시 ${weeklyMeta.rangeLabel} 구간의 일봉 데이터만 사용하고, 구간 밖 데이터는 해석에 포함하지 마세요.
+데이터가 비어 있거나 부족하면 그 한계를 먼저 명시하세요.
+
+[분석 대상 기간]
+${weeklyMeta.rangeLabel}
 
 [USD/KRW 일봉]
 ${usdData}
@@ -664,12 +743,76 @@ KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
     const result = await callGeminiWithFallback(prompt, ['gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash']);
     const analysis = result.text;
     aCache.set(KEY, { analysis, ts: Date.now(), model: result.model });
-    res.json({ version: '8.0.0', analysis, cached: false, model: result.model });
+    res.json({ version: '8.0.0', analysis, cached: false, model: result.model, rangeLabel: weeklyMeta.rangeLabel });
   } catch (e) {
     if (hit?.analysis) {
       return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: 'Gemini 호출 한도 초과로 최근 캐시를 반환했습니다.' });
     }
     const analysis = buildWeeklyFallback();
     res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 한도 초과로 규칙 기반 분석을 반환했습니다.' });
+  }
+});
+
+app.get('/api/monthly-analysis', async (_, res) => {
+  const KEY = 'monthly_analysis';
+  const hit = aCache.get(KEY);
+  if (hit && Date.now() - hit.ts < 30 * 60000)
+    return res.json({ analysis: hit.analysis, cached: true, model: hit.model || 'cache' });
+
+  try {
+    const monthlyMeta = getMonthlyRangeMeta();
+    const usdPeriod = filterDailyByRange('USDKRW', 'monthly');
+    const eurPeriod = filterDailyByRange('EURKRW', 'monthly');
+    const dxyPeriod = filterDailyByRange('DXY', 'monthly');
+
+    const usdData = usdPeriod.data.map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ') || '해당 기간 데이터 없음';
+    const eurData = eurPeriod.data.map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ') || '해당 기간 데이터 없음';
+    const dxyData = dxyPeriod.data.map(c =>
+      `${new Date(c.time*1000).toISOString().slice(0,10)}: O${c.open} H${c.high} L${c.low} C${c.close}`
+    ).join(', ') || '해당 기간 데이터 없음';
+
+    const prompt = `금융 시장 전문 애널리스트로서 당월 누적 환율 보고서를 작성해주세요.
+반드시 ${monthlyMeta.rangeLabel} 구간의 일봉 데이터만 사용하고, 구간 밖 데이터는 해석에 포함하지 마세요.
+데이터가 비어 있거나 부족하면 그 한계를 먼저 명시하세요.
+
+[분석 대상 기간]
+${monthlyMeta.rangeLabel}
+
+[USD/KRW 일봉]
+${usdData}
+
+[EUR/KRW 일봉]
+${eurData}
+
+[DXY 달러인덱스 일봉]
+${dxyData}
+
+[현재 시장]
+USD/KRW: ${state.USDKRW}, EUR/KRW: ${state.EURKRW}, DXY: ${state.DXY}
+KR10Y: ${state.KR10Y}%, US10Y: ${state.US10Y}%, 금리차: ${state.spread10y}pp
+
+## 월간 보고서 작성 항목
+1. 월간 환율 동향 요약
+2. 달러 강약세 분석 (DXY 기반)
+3. 원화 환율 주요 변동 포인트
+4. 남은 기간 전망 및 주요 체크포인트
+5. 리스크 요인
+
+(한국어, Markdown 형식, 800~1200자)`;
+
+    const result = await callGeminiWithFallback(prompt, ['gemini-3.1-pro-preview', 'gemini-2.5-pro', 'gemini-2.5-flash']);
+    const analysis = result.text;
+    aCache.set(KEY, { analysis, ts: Date.now(), model: result.model });
+    res.json({ version: '8.0.0', analysis, cached: false, model: result.model, rangeLabel: monthlyMeta.rangeLabel });
+  } catch (e) {
+    if (hit?.analysis) {
+      return res.json({ version: '8.0.0', analysis: hit.analysis, cached: true, stale: true, warning: 'Gemini 호출 한도 초과로 최근 캐시를 반환했습니다.' });
+    }
+    const analysis = buildMarketFallback();
+    res.json({ version: '8.0.0', analysis, cached: false, fallback: true, warning: 'Gemini 호출 한도 초과로 월간 백업 분석을 반환했습니다.' });
   }
 });
