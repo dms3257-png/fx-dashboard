@@ -953,8 +953,7 @@ function applyReportText(box, d) {
   if (!d || !d.analysis) return false;
   box.innerHTML = d.analysis
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/
-/g, '<br>');
+    .replace(/\\n/g, '<br>');
   return true;
 }
 
