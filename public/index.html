@@ -203,6 +203,13 @@
     .td-down { color: #f87171; font-weight: 600; }
     .td-date { color: #94a3b8; }
     .daily-chart-box { width: 100%; height: 200px; }
+    .subtle-btn {
+      margin-top: 10px; padding: 6px 10px; border-radius: 6px; border: 1px solid #334155;
+      background: #0f172a; color: #cbd5e1; font-size: 0.76rem; cursor: pointer;
+    }
+    .subtle-btn:hover { background: #1e293b; }
+    .table-more { display: none; margin-top: 10px; }
+    .more-note { margin-top: 8px; font-size: 0.68rem; color: #64748b; }
   </style>
 </head>
 <body>
@@ -402,22 +409,22 @@
     <div class="weekly-grid">
       <div class="card">
         <div class="card-head">
-          <span class="card-title">USD/KRW 일봉</span>
-          <span class="tag tag-blue">일봉</span>
+          <span class="card-title">USD/KRW 직전 주 시세 추이</span>
+          <span class="tag tag-blue">직전 주</span>
         </div>
         <div class="daily-chart-box" id="wc-usd"></div>
       </div>
       <div class="card">
         <div class="card-head">
-          <span class="card-title">EUR/KRW 일봉</span>
-          <span class="tag tag-orange">일봉</span>
+          <span class="card-title">EUR/KRW 직전 주 시세 추이</span>
+          <span class="tag tag-orange">직전 주</span>
         </div>
         <div class="daily-chart-box" id="wc-eur"></div>
       </div>
       <div class="card">
         <div class="card-head">
-          <span class="card-title">DXY 달러인덱스 일봉</span>
-          <span class="tag tag-blue">일봉</span>
+          <span class="card-title">DXY 직전 주 종가 추이</span>
+          <span class="tag tag-blue">직전 주</span>
         </div>
         <div class="daily-chart-box" id="wc-dxy"></div>
       </div>
@@ -431,6 +438,9 @@
           <span class="tag tag-gray" id="tbl-usd-range">집계 중...</span>
         </div>
         <div id="tbl-usd-wrap" style="overflow-x:auto"></div>
+        <button class="subtle-btn" id="more-usd-btn" onclick="toggleMoreTable('usd')">더보기</button>
+        <div class="more-note">3월 1일 ~ 전전 주 데이터</div>
+        <div id="tbl-usd-more" class="table-more"></div>
       </div>
       <div class="card">
         <div class="card-head">
@@ -438,6 +448,9 @@
           <span class="tag tag-gray" id="tbl-eur-range">집계 중...</span>
         </div>
         <div id="tbl-eur-wrap" style="overflow-x:auto"></div>
+        <button class="subtle-btn" id="more-eur-btn" onclick="toggleMoreTable('eur')">더보기</button>
+        <div class="more-note">3월 1일 ~ 전전 주 데이터</div>
+        <div id="tbl-eur-more" class="table-more"></div>
       </div>
     </div>
 
@@ -469,22 +482,22 @@
     <div class="weekly-grid">
       <div class="card">
         <div class="card-head">
-          <span class="card-title">USD/KRW 일봉</span>
-          <span class="tag tag-blue">당월 누적</span>
+          <span class="card-title">USD/KRW 월별 시세 추이</span>
+          <span class="tag tag-blue">월별</span>
         </div>
         <div class="daily-chart-box" id="mc-usd"></div>
       </div>
       <div class="card">
         <div class="card-head">
-          <span class="card-title">EUR/KRW 일봉</span>
-          <span class="tag tag-orange">당월 누적</span>
+          <span class="card-title">EUR/KRW 월별 시세 추이</span>
+          <span class="tag tag-orange">월별</span>
         </div>
         <div class="daily-chart-box" id="mc-eur"></div>
       </div>
       <div class="card">
         <div class="card-head">
-          <span class="card-title">DXY 달러인덱스 일봉</span>
-          <span class="tag tag-blue">당월 누적</span>
+          <span class="card-title">DXY 월별 종가 추이</span>
+          <span class="tag tag-blue">월별</span>
         </div>
         <div class="daily-chart-box" id="mc-dxy"></div>
       </div>
@@ -493,14 +506,14 @@
     <div class="weekly-grid-2">
       <div class="card">
         <div class="card-head">
-          <span class="card-title">USD/KRW 월간 일별 시세</span>
+          <span class="card-title">USD/KRW 월별 시세</span>
           <span class="tag tag-gray" id="tbl-monthly-usd-range">집계 중...</span>
         </div>
         <div id="tbl-monthly-usd-wrap" style="overflow-x:auto"></div>
       </div>
       <div class="card">
         <div class="card-head">
-          <span class="card-title">EUR/KRW 월간 일별 시세</span>
+          <span class="card-title">EUR/KRW 월별 시세</span>
           <span class="tag tag-gray" id="tbl-monthly-eur-range">집계 중...</span>
         </div>
         <div id="tbl-monthly-eur-wrap" style="overflow-x:auto"></div>
@@ -550,10 +563,7 @@ function getLastWeekRangeText() {
 }
 
 function getMonthRangeText() {
-  const now = new Date(Date.now() + 9 * 3600 * 1000);
-  const start = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), 1));
-  const end = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate()));
-  return `${fmtKstDate(start)} ~ ${fmtKstDate(end)} · 당월 누적 일봉 기준`;
+  return '2025년 7월 ~ 현재 · 월별 종가 기준';
 }
 
 function setWeeklyDateRange(text) {
@@ -946,6 +956,8 @@ document.getElementById('fx-amt').addEventListener('keydown', e => e.key==='Ente
 // ════════════════════════════════════════════════════
 let weeklyInited = false;
 let monthlyInited = false;
+let weeklyMoreLoaded = { usd: false, eur: false };
+let weeklyMoreOpen = { usd: false, eur: false };
 let wChUSD, wChEUR, wChDXY, wSeriesUSD, wSeriesEUR, wSeriesDXY;
 let mChUSD, mChEUR, mChDXY, mSeriesUSD, mSeriesEUR, mSeriesDXY;
 
@@ -953,75 +965,108 @@ function applyReportText(box, d) {
   if (!d || !d.analysis) return false;
   box.innerHTML = d.analysis
     .replace(/\*\*(.*?)\*\*/g, '<strong>$1</strong>')
-    .replace(/\\n/g, '<br>');
+    .replace(/\\n/g, '<br>')
+    .replace(/\n/g, '<br>');
   return true;
 }
 
+function toLineData(data) {
+  return (data || []).map(row => ({ time: row.time, value: Number(row.close ?? row.baseRate ?? row.value) })).filter(row => Number.isFinite(row.value));
+}
+
 function buildRateTable(wrapperId, data, rangeId, rangeLabel, coverageText) {
-  const rangeEl = document.getElementById(rangeId);
-  if (rangeEl) {
-    rangeEl.textContent = [rangeLabel, coverageText].filter(Boolean).join(' · ') || '데이터 없음';
-  }
+  const rangeEl = rangeId ? document.getElementById(rangeId) : null;
+  if (rangeEl) rangeEl.textContent = [rangeLabel, coverageText].filter(Boolean).join(' · ') || '데이터 없음';
+  const wrap = document.getElementById(wrapperId);
+  if (!wrap) return;
   if (!data || !data.length) {
-    document.getElementById(wrapperId).innerHTML = '<div class="empty-msg">선택한 기간의 일봉 데이터가 아직 없습니다.</div>';
+    wrap.innerHTML = '<div class="empty-msg">선택한 기간의 시세 데이터가 아직 없습니다.</div>';
+    return;
+  }
+
+  const isMonthly = !!data[0].periodLabel;
+  if (isMonthly) {
+    const processed = data.map((row, idx) => {
+      const prev = idx > 0 ? data[idx - 1] : null;
+      const chg = prev ? row.close - prev.close : 0;
+      const chgPct = prev ? (chg / prev.close) * 100 : 0;
+      return { row, chg, chgPct };
+    }).reverse();
+    const rows = processed.map(({ row, chg, chgPct }) => {
+      const chgClass = chg > 0 ? 'td-up' : (chg < 0 ? 'td-down' : '');
+      const chgStr = chg === 0 ? '-' : `${chg > 0 ? '+' : ''}${chg.toFixed(2)} (${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%)`;
+      return `<tr>
+        <td class="td-date">${row.periodLabel}</td>
+        <td>${row.open.toFixed(2)}</td>
+        <td>${row.high.toFixed(2)}</td>
+        <td>${row.low.toFixed(2)}</td>
+        <td><strong>${row.close.toFixed(2)}</strong></td>
+        <td class="${chgClass}">${chgStr}</td>
+      </tr>`;
+    }).join('');
+    wrap.innerHTML = `<table class="rate-table"><thead><tr><th>월</th><th>시가</th><th>고가</th><th>저가</th><th>종가</th><th>월간등락</th></tr></thead><tbody>${rows}</tbody></table>`;
     return;
   }
 
   const DAYS = ['일','월','화','수','목','금','토'];
-  let rows = '';
-  for (let i = 0; i < data.length; i++) {
-    const c = data[i];
-    const d = new Date(c.time * 1000);
-    const mo = d.getUTCMonth() + 1;
-    const dd = d.getUTCDate();
-    const dow = DAYS[d.getUTCDay()];
-    const dateStr = mo + '/' + dd + '(' + dow + ')';
-    const chg = i === 0 ? 0 : c.close - data[i-1].close;
-    const chgPct = i === 0 ? 0 : ((chg / data[i-1].close) * 100);
+  const processed = data.map((row, idx) => {
+    const prev = idx > 0 ? data[idx - 1] : null;
+    const chg = prev ? row.close - prev.close : 0;
+    const chgPct = prev ? (chg / prev.close) * 100 : 0;
+    return { row, chg, chgPct };
+  }).reverse();
+
+  const rows = processed.map(({ row, chg, chgPct }) => {
+    const d = new Date(row.time * 1000);
+    const dateStr = `${d.getUTCMonth() + 1}/${d.getUTCDate()}(${DAYS[d.getUTCDay()]})`;
     const chgClass = chg > 0 ? 'td-up' : (chg < 0 ? 'td-down' : '');
-    const chgStr = chg === 0 ? '-'
-      : (chg > 0 ? '+' : '') + chg.toFixed(2) + ' (' + (chgPct >= 0 ? '+' : '') + chgPct.toFixed(2) + '%)';
-    rows += `<tr>
+    const chgStr = chg === 0 ? '-' : `${chg > 0 ? '+' : ''}${chg.toFixed(2)} (${chgPct >= 0 ? '+' : ''}${chgPct.toFixed(2)}%)`;
+    return `<tr>
       <td class="td-date">${dateStr}</td>
-      <td>${c.open.toFixed(2)}</td>
-      <td>${c.high.toFixed(2)}</td>
-      <td>${c.low.toFixed(2)}</td>
-      <td><strong>${c.close.toFixed(2)}</strong></td>
+      <td><strong>${row.close.toFixed(2)}</strong></td>
       <td class="${chgClass}">${chgStr}</td>
+      <td>${Number.isFinite(row.cashBuy) ? row.cashBuy.toFixed(2) : '-'}</td>
+      <td>${Number.isFinite(row.cashSell) ? row.cashSell.toFixed(2) : '-'}</td>
+      <td>${Number.isFinite(row.remitSend) ? row.remitSend.toFixed(2) : '-'}</td>
+      <td>${Number.isFinite(row.remitReceive) ? row.remitReceive.toFixed(2) : '-'}</td>
     </tr>`;
+  }).join('');
+  wrap.innerHTML = `<table class="rate-table"><thead><tr><th>날짜</th><th>기준율</th><th>전일대비</th><th>현찰 살때</th><th>현찰 팔때</th><th>송금 보낼때</th><th>송금 받을때</th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+function toggleMoreTable(kind) {
+  weeklyMoreOpen[kind] = !weeklyMoreOpen[kind];
+  const box = document.getElementById(`tbl-${kind}-more`);
+  const btn = document.getElementById(`more-${kind}-btn`);
+  if (box) box.style.display = weeklyMoreOpen[kind] ? 'block' : 'none';
+  if (btn) btn.textContent = weeklyMoreOpen[kind] ? '접기' : '더보기';
+  if (weeklyMoreOpen[kind] && !weeklyMoreLoaded[kind]) loadWeeklyMore(kind);
+}
+
+async function loadWeeklyMore(kind) {
+  const symbol = kind === 'usd' ? 'USDKRW' : 'EURKRW';
+  const rangeId = kind === 'usd' ? 'tbl-usd-range' : 'tbl-eur-range';
+  const wrapId = kind === 'usd' ? 'tbl-usd-more' : 'tbl-eur-more';
+  const wrap = document.getElementById(wrapId);
+  if (wrap) wrap.innerHTML = '<div class="empty-msg">추가 데이터를 불러오는 중...</div>';
+  try {
+    const d = await (await req(`/api/daily-candles?symbol=${symbol}&range=weekly-more`)).json();
+    buildRateTable(wrapId, d.data || [], '', d.rangeLabel, d.coverageText);
+    weeklyMoreLoaded[kind] = true;
+  } catch (e) {
+    if (wrap) wrap.innerHTML = '<div class="empty-msg">추가 데이터를 불러오지 못했습니다.</div>';
   }
-  document.getElementById(wrapperId).innerHTML = `
-    <table class="rate-table">
-      <thead>
-        <tr>
-          <th>날짜</th><th>시가</th><th>고가</th><th>저가</th><th>종가</th><th>등락</th>
-        </tr>
-      </thead>
-      <tbody>${rows}</tbody>
-    </table>`;
 }
 
 function initWeeklyPage() {
   if (weeklyInited) return;
   weeklyInited = true;
   wChUSD = makeDailyChart('wc-usd', 200);
-  wSeriesUSD = wChUSD.addCandlestickSeries({
-    upColor: '#26a69a', downColor: '#ef5350',
-    borderUpColor: '#26a69a', borderDownColor: '#ef5350',
-    wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-  });
+  wSeriesUSD = wChUSD.addAreaSeries({ lineColor: '#60a5fa', topColor: 'rgba(96,165,250,0.28)', bottomColor: 'rgba(96,165,250,0.03)', lineWidth: 2, priceLineVisible: false });
   wChEUR = makeDailyChart('wc-eur', 200);
-  wSeriesEUR = wChEUR.addCandlestickSeries({
-    upColor: '#fb923c', downColor: '#dc2626',
-    borderUpColor: '#fb923c', borderDownColor: '#dc2626',
-    wickUpColor: '#fb923c', wickDownColor: '#dc2626'
-  });
+  wSeriesEUR = wChEUR.addAreaSeries({ lineColor: '#fb923c', topColor: 'rgba(251,146,60,0.28)', bottomColor: 'rgba(251,146,60,0.03)', lineWidth: 2, priceLineVisible: false });
   wChDXY = makeDailyChart('wc-dxy', 200);
-  wSeriesDXY = wChDXY.addCandlestickSeries({
-    upColor: '#34d399', downColor: '#f87171',
-    borderUpColor: '#34d399', borderDownColor: '#f87171',
-    wickUpColor: '#34d399', wickDownColor: '#f87171'
-  });
+  wSeriesDXY = wChDXY.addAreaSeries({ lineColor: '#34d399', topColor: 'rgba(52,211,153,0.25)', bottomColor: 'rgba(52,211,153,0.03)', lineWidth: 2, priceLineVisible: false });
   loadWeeklyData();
 }
 
@@ -1032,10 +1077,10 @@ async function loadWeeklyData() {
       (await req('/api/daily-candles?symbol=EURKRW&range=weekly')).json(),
       (await req('/api/daily-candles?symbol=DXY&range=weekly')).json()
     ]);
-    setWeeklyDateRange(dUSD.rangeLabel ? `${dUSD.rangeLabel} · 직전 주간 일봉 기준` : undefined);
-    wSeriesUSD.setData(dUSD.data || []);
-    wSeriesEUR.setData(dEUR.data || []);
-    wSeriesDXY.setData(dDXY.data || []);
+    setWeeklyDateRange(dUSD.rangeLabel ? `${dUSD.rangeLabel} · 직전 주 시세 기준` : undefined);
+    wSeriesUSD.setData(toLineData(dUSD.data));
+    wSeriesEUR.setData(toLineData(dEUR.data));
+    wSeriesDXY.setData(toLineData(dDXY.data));
     wChUSD.timeScale().fitContent();
     wChEUR.timeScale().fitContent();
     wChDXY.timeScale().fitContent();
@@ -1048,23 +1093,11 @@ function initMonthlyPage() {
   if (monthlyInited) return;
   monthlyInited = true;
   mChUSD = makeDailyChart('mc-usd', 200);
-  mSeriesUSD = mChUSD.addCandlestickSeries({
-    upColor: '#26a69a', downColor: '#ef5350',
-    borderUpColor: '#26a69a', borderDownColor: '#ef5350',
-    wickUpColor: '#26a69a', wickDownColor: '#ef5350'
-  });
+  mSeriesUSD = mChUSD.addAreaSeries({ lineColor: '#60a5fa', topColor: 'rgba(96,165,250,0.28)', bottomColor: 'rgba(96,165,250,0.03)', lineWidth: 2, priceLineVisible: false });
   mChEUR = makeDailyChart('mc-eur', 200);
-  mSeriesEUR = mChEUR.addCandlestickSeries({
-    upColor: '#fb923c', downColor: '#dc2626',
-    borderUpColor: '#fb923c', borderDownColor: '#dc2626',
-    wickUpColor: '#fb923c', wickDownColor: '#dc2626'
-  });
+  mSeriesEUR = mChEUR.addAreaSeries({ lineColor: '#fb923c', topColor: 'rgba(251,146,60,0.28)', bottomColor: 'rgba(251,146,60,0.03)', lineWidth: 2, priceLineVisible: false });
   mChDXY = makeDailyChart('mc-dxy', 200);
-  mSeriesDXY = mChDXY.addCandlestickSeries({
-    upColor: '#34d399', downColor: '#f87171',
-    borderUpColor: '#34d399', borderDownColor: '#f87171',
-    wickUpColor: '#34d399', wickDownColor: '#f87171'
-  });
+  mSeriesDXY = mChDXY.addAreaSeries({ lineColor: '#34d399', topColor: 'rgba(52,211,153,0.25)', bottomColor: 'rgba(52,211,153,0.03)', lineWidth: 2, priceLineVisible: false });
   loadMonthlyData();
 }
 
@@ -1075,10 +1108,10 @@ async function loadMonthlyData() {
       (await req('/api/daily-candles?symbol=EURKRW&range=monthly')).json(),
       (await req('/api/daily-candles?symbol=DXY&range=monthly')).json()
     ]);
-    setMonthlyDateRange(dUSD.rangeLabel ? `${dUSD.rangeLabel} · 당월 누적 일봉 기준` : undefined);
-    mSeriesUSD.setData(dUSD.data || []);
-    mSeriesEUR.setData(dEUR.data || []);
-    mSeriesDXY.setData(dDXY.data || []);
+    setMonthlyDateRange(dUSD.rangeLabel ? `${dUSD.rangeLabel} · 월별 종가 기준` : undefined);
+    mSeriesUSD.setData(toLineData(dUSD.data));
+    mSeriesEUR.setData(toLineData(dEUR.data));
+    mSeriesDXY.setData(toLineData(dDXY.data));
     mChUSD.timeScale().fitContent();
     mChEUR.timeScale().fitContent();
     mChDXY.timeScale().fitContent();
