@@ -118,6 +118,17 @@ let reportHistoryFetchedAt = 0;
 let reportHistoryPromise = null;
 const REPORT_HISTORY_START_YMD = '2025-07-01';
 
+const homeIntradayCache = {
+  USDKRW: { rows: [], fetchedAt: 0 },
+  EURKRW: { rows: [], fetchedAt: 0 }
+};
+let homeIntradayPromise = null;
+const HOME_INTRADAY_TTL_MS = 60 * 1000;
+const HOME_INTRADAY_MAP = {
+  USDKRW: 'USDKRW=X',
+  EURKRW: 'EURKRW=X'
+};
+
 // ─── 한국은행 실제 외환보유액 (2025.02 ~ 2026.01) ────────
 const reservesData = [
   { month: '2025-02-01', value: 423.1 },
@@ -181,6 +192,73 @@ function dedupeByTime(rows) {
     if (row && row.time) m.set(row.time, row);
   }
   return Array.from(m.values()).sort((a, b) => a.time - b.time);
+}
+
+async function fetchYahooIntradayFx(yahooSymbol, range = '5d', interval = '30m') {
+  const url = `https://query1.finance.yahoo.com/v8/finance/chart/${encodeURIComponent(yahooSymbol)}?range=${range}&interval=${interval}&includePrePost=false&events=div%2Csplits`;
+  const res = await fetch(url, { headers: { 'User-Agent': 'Mozilla/5.0', 'Accept': 'application/json' } });
+  if (!res.ok) throw new Error(`Yahoo intraday fetch failed (${yahooSymbol}): ${res.status}`);
+  const json = await res.json();
+  const result = json?.chart?.result?.[0];
+  const quote = result?.indicators?.quote?.[0] || {};
+  const timestamps = result?.timestamp || [];
+  const rows = [];
+  for (let i = 0; i < timestamps.length; i++) {
+    const closeRaw = quote.close?.[i];
+    const close = typeof closeRaw === 'number' ? closeRaw : Number(closeRaw);
+    if (!Number.isFinite(close) || close <= 0) continue;
+    const openRaw = quote.open?.[i];
+    const highRaw = quote.high?.[i];
+    const lowRaw = quote.low?.[i];
+    const open = typeof openRaw === 'number' && openRaw > 0 ? openRaw : close;
+    const high = typeof highRaw === 'number' && highRaw > 0 ? highRaw : close;
+    const low = typeof lowRaw === 'number' && lowRaw > 0 ? lowRaw : close;
+    rows.push({
+      timestamp: Number(timestamps[i]) * 1000,
+      open: Number(open.toFixed(2)),
+      high: Number(high.toFixed(2)),
+      low: Number(low.toFixed(2)),
+      close: Number(close.toFixed(2)),
+      source: 'Yahoo Finance'
+    });
+  }
+  return rows.sort((a, b) => a.timestamp - b.timestamp);
+}
+
+function setHomeIntradayRows(sym, rows) {
+  const normalized = (rows || []).filter(Boolean).sort((a, b) => a.timestamp - b.timestamp);
+  if (!normalized.length) return;
+  candles[sym] = normalized;
+  homeIntradayCache[sym].rows = normalized;
+  homeIntradayCache[sym].fetchedAt = Date.now();
+  const last = normalized[normalized.length - 1];
+  if (last && Number.isFinite(last.close)) state[sym] = Number(last.close.toFixed(2));
+}
+
+async function refreshHomeIntraday(force = false) {
+  const hasFresh = Object.values(homeIntradayCache).every(v => v.rows.length && (Date.now() - v.fetchedAt < HOME_INTRADAY_TTL_MS));
+  if (!force && hasFresh) return homeIntradayCache;
+  if (homeIntradayPromise) return homeIntradayPromise;
+
+  homeIntradayPromise = (async () => {
+    try {
+      const [usdRows, eurRows] = await Promise.all([
+        fetchYahooIntradayFx(HOME_INTRADAY_MAP.USDKRW),
+        fetchYahooIntradayFx(HOME_INTRADAY_MAP.EURKRW)
+      ]);
+      if (usdRows.length) setHomeIntradayRows('USDKRW', usdRows);
+      if (eurRows.length) setHomeIntradayRows('EURKRW', eurRows);
+      console.log(`✅ 홈 30분봉 갱신 USD:${candles.USDKRW.length} EUR:${candles.EURKRW.length}`);
+      return homeIntradayCache;
+    } catch (err) {
+      console.error('❌ refreshHomeIntraday:', err.message);
+      return homeIntradayCache;
+    } finally {
+      homeIntradayPromise = null;
+    }
+  })();
+
+  return homeIntradayPromise;
 }
 
 async function scrapeNaverDailyHistory(marketindexCd, minYmd = REPORT_HISTORY_START_YMD, maxPages = 35) {
@@ -460,23 +538,24 @@ function buildInitialCandles(basePrice, bodyRange, wickRange) {
 }
 
 function generateInitialData() {
-  candles.USDKRW = buildInitialCandles(state.USDKRW || 1451.0, 0.8,  0.25);
-  candles.EURKRW = buildInitialCandles(state.EURKRW || 1715.0, 1.2,  0.40);
-  candles.DXY    = buildInitialCandles(state.DXY    ||   97.0, 0.05, 0.02);
+  if (!candles.USDKRW.length) candles.USDKRW = buildInitialCandles(state.USDKRW || 1451.0, 0.8,  0.25);
+  if (!candles.EURKRW.length) candles.EURKRW = buildInitialCandles(state.EURKRW || 1715.0, 1.2,  0.40);
+  if (!candles.DXY.length)    candles.DXY    = buildInitialCandles(state.DXY    ||   97.0, 0.05, 0.02);
   // 오늘 일봉 추가
   if (state.USDKRW) updateTodayCandle('USDKRW', state.USDKRW);
   if (state.EURKRW) updateTodayCandle('EURKRW', state.EURKRW);
   if (state.DXY)    updateTodayCandle('DXY',    state.DXY);
-  console.log('✅ 초기 캔들 24개 생성 + 일봉 씨드 로드');
+  console.log('✅ 초기 캔들/실시간 30분봉 준비 완료');
 }
 
 async function crawlLoop() {
   console.log(`\n⏰ ${kstNow()}`);
-  await crawlFx();
+  await refreshHomeIntraday(true);
+  if (!state.USDKRW || !state.EURKRW) await crawlFx();
   await crawlDXY();
-  if (state.USDKRW) storeCandle('USDKRW', state.USDKRW);
-  if (state.EURKRW) storeCandle('EURKRW', state.EURKRW);
-  if (state.DXY)    storeCandle('DXY',    state.DXY);
+  if (!candles.USDKRW.length && state.USDKRW) storeCandle('USDKRW', state.USDKRW);
+  if (!candles.EURKRW.length && state.EURKRW) storeCandle('EURKRW', state.EURKRW);
+  if (state.DXY) storeCandle('DXY', state.DXY);
   // 일봉 오늘 캔들 갱신
   if (state.USDKRW) updateTodayCandle('USDKRW', state.USDKRW);
   if (state.EURKRW) updateTodayCandle('EURKRW', state.EURKRW);
@@ -489,7 +568,8 @@ async function crawlLoop() {
 const PORT = process.env.PORT || 10000;
 app.listen(PORT, async () => {
   console.log(`🚀 환율 데이터 v8.0.0 - 포트 ${PORT} - BUILD_ID: ${BUILD_ID}`);
-  await crawlFx();
+  await refreshHomeIntraday(true);
+  if (!state.USDKRW || !state.EURKRW) await crawlFx();
   await crawlDXY();
   generateInitialData();
   await refreshReportHistory(true);
@@ -503,13 +583,28 @@ app.get('/api/latest', (_, res) => res.json({
   KR10Y: state.KR10Y, US10Y: state.US10Y, spread10y: state.spread10y
 }));
 
-app.get('/api/candles', (req, res) => {
-  const sym  = req.query.symbol || 'USDKRW';
-  const data = (candles[sym] || []).map(c => ({
-    time:  Math.floor(c.timestamp / 1000),
-    open:  c.open, high: c.high, low: c.low, close: c.close
-  }));
-  res.json({ version: '8.0.0', symbol: sym, interval: '30m', count: data.length, data });
+app.get('/api/candles', async (req, res) => {
+  try {
+    const sym = req.query.symbol || 'USDKRW';
+    if ((sym === 'USDKRW' || sym === 'EURKRW') && (!candles[sym]?.length || Date.now() - (homeIntradayCache[sym]?.fetchedAt || 0) > HOME_INTRADAY_TTL_MS)) {
+      await refreshHomeIntraday(true);
+    }
+    const data = (candles[sym] || []).map(c => ({
+      time: Math.floor(c.timestamp / 1000),
+      open: c.open, high: c.high, low: c.low, close: c.close
+    }));
+    res.json({
+      version: '8.0.0',
+      symbol: sym,
+      interval: '30m',
+      source: (sym === 'USDKRW' || sym === 'EURKRW') ? 'Yahoo Finance' : 'internal',
+      stale: (sym === 'USDKRW' || sym === 'EURKRW') ? (Date.now() - (homeIntradayCache[sym]?.fetchedAt || 0) > HOME_INTRADAY_TTL_MS * 3) : false,
+      count: data.length,
+      data
+    });
+  } catch (e) {
+    res.status(500).json({ version: '8.0.0', error: e.message, symbol: req.query.symbol || 'USDKRW' });
+  }
 });
 
 // ─── 일봉 API ─────────────────────────────────────────
