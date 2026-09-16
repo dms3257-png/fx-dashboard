@@ -615,10 +615,11 @@ function makeChart(id, height) {
       borderColor: '#334155',
       timeVisible: true,
       secondsVisible: false,
-      fixLeftEdge:  true,
-      fixRightEdge: true,
-      barSpacing: 22,
-      minBarSpacing: 10,
+      fixLeftEdge:  false,
+      fixRightEdge: false,
+      rightOffset: 6,
+      barSpacing: 30,
+      minBarSpacing: 14,
       tickMarkFormatter: (time) => {
         const d = new Date(time * 1000);
         const h = String(d.getUTCHours()).padStart(2, '0');
@@ -631,12 +632,11 @@ function makeChart(id, height) {
       scaleMargins: { top: 0.10, bottom: 0.10 }
     },
     crosshair: { mode: LightweightCharts.CrosshairMode.Normal },
-    handleScroll: false,
-    handleScale:  false
+    handleScroll: true,
+    handleScale:  true
   });
   new ResizeObserver(() => {
     chart.applyOptions({ width: el.clientWidth });
-    chart.timeScale().fitContent();
   }).observe(el);
   return chart;
 }
@@ -721,7 +721,14 @@ async function loadCandles(sym, series, chart) {
         open:  c.open, high: c.high, low: c.low, close: c.close
       }));
       series.setData(kst);
-      chart.timeScale().fitContent();
+      if (kst.length > 48) {
+        chart.timeScale().setVisibleRange({
+          from: kst[kst.length - 48].time,
+          to: kst[kst.length - 1].time
+        });
+      } else {
+        chart.timeScale().fitContent();
+      }
     }
   } catch(e) { console.error('candles error:', sym, e); }
 }
@@ -1197,5 +1204,6 @@ setInterval(() => {
       });
     }
   </script>
+<script type="module" src="https://static.cloudflareinsights.com/beacon.min.js/v31edd6df95cf4e85bb4c19e7a9bdbcba1788362987495" integrity="sha512-iIg7k2xntmwu6/uSb5tpc/hySgZc4eoL31yB29W6tJFo2akwjPWcEqnCEdJvGexCL0KEQwVYv5BlowfhVz26hg==" data-cf-beacon='{"version":"2024.11.0","token":"4edd5f8ec12a48cfa682ab8261b80a79","spa":2}' crossorigin="anonymous"></script>
 </body>
 </html>
